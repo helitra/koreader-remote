@@ -36,3 +36,4 @@ A minimal KOReader plugin that serves a local phone-friendly remote control.
 - Use it only on a trusted local network.
 - A sleeping Kindle cannot be awakened through this server.
 - The server stops when KOReader enters standby/suspend or closes the current UI.
+- complete AI slop, because i am to dumb to code myself =)
