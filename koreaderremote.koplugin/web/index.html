@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#111111">
+  <title>KOReader Remote</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+      color: #fff;
+    }
+
+    body {
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    #remote {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      width: 100%;
+      height: 100%;
+    }
+
+    button {
+      border: 0;
+      border-radius: 0;
+      background: #1c1c1c;
+      color: inherit;
+      font: inherit;
+      font-size: clamp(4rem, 20vw, 9rem);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button:first-child {
+      border-right: 1px solid #444;
+    }
+
+    button:active {
+      background: #333;
+    }
+
+    #status {
+      position: fixed;
+      top: max(10px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.45rem 0.8rem;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.75);
+      font-size: 0.85rem;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <main id="remote" aria-label="KOReader-Fernbedienung">
+    <button id="previous" type="button" aria-label="Vorherige Seite">‹</button>
+    <button id="next" type="button" aria-label="Nächste Seite">›</button>
+  </main>
+
+  <div id="status" role="status">Verbinde …</div>
+
+  <script>
+    const statusElement = document.getElementById("status");
+    let requestRunning = false;
+
+    function setStatus(text) {
+      statusElement.textContent = text;
+    }
+
+    async function request(path, label) {
+      if (requestRunning) {
+        return;
+      }
+
+      requestRunning = true;
+      setStatus(label + " …");
+
+      try {
+        const response = await fetch(path, {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+
+        setStatus("Verbunden");
+        if (navigator.vibrate) {
+          navigator.vibrate(15);
+        }
+      } catch (error) {
+        console.error("KOReader Remote request failed:", error);
+        setStatus("Keine Verbindung");
+      } finally {
+        requestRunning = false;
+      }
+    }
+
+    function previousPage() {
+      request("/api/previous", "Zurück");
+    }
+
+    function nextPage() {
+      request("/api/next", "Weiter");
+    }
+
+    document.getElementById("previous")
+      .addEventListener("click", previousPage);
+
+    document.getElementById("next")
+      .addEventListener("click", nextPage);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") {
+        previousPage();
+      }
+
+      if (event.key === "ArrowRight" || event.key === " ") {
+        nextPage();
+      }
+    });
+
+    fetch("/api/ping", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        setStatus("Verbunden");
+      })
+      .catch(() => setStatus("Keine Verbindung"));
+  </script>
+</body>
+</html>
