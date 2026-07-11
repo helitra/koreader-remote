@@ -1,4 +1,4 @@
--- KOReader Remote v0.1.0
+-- KOReader Remote v0.1.1
 -- Minimal local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -287,7 +287,8 @@ end
 function Remote:addToMainMenu(menu_items)
     menu_items.koreader_remote = {
         text = _("KOReader Remote"),
-        sorting_hint = "more_tools",
+        -- No sorting_hint: place the plugin directly in KOReader's
+        -- Tools menu instead of Tools -> More tools.
         sub_item_table = {
             {
                 text_func = function()

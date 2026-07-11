@@ -1,10 +1,10 @@
-# KOReader Remote v0.1.0
+# KOReader Remote v0.1.1
 
 A minimal KOReader plugin that serves a local phone-friendly remote control.
 
 ## Features
 
-- Start/stop from KOReader's "More tools" menu
+- Start/stop directly from KOReader's "Tools" menu
 - Fixed port: 8081
 - Previous page
 - Next page
@@ -20,7 +20,7 @@ A minimal KOReader plugin that serves a local phone-friendly remote control.
 3. Restart KOReader completely.
 4. Open a book.
 5. Go to:
-   `Tools -> More tools -> KOReader Remote -> Start remote server`
+   `Tools -> KOReader Remote -> Start remote server`
 6. On a phone in the same Wi-Fi network, open:
    `http://KINDLE-IP:8081/`
 
@@ -36,4 +36,3 @@ A minimal KOReader plugin that serves a local phone-friendly remote control.
 - Use it only on a trusted local network.
 - A sleeping Kindle cannot be awakened through this server.
 - The server stops when KOReader enters standby/suspend or closes the current UI.
-- complete AI slop, because i am to dumb to code myself =)
