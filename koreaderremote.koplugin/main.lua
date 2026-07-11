@@ -1,5 +1,5 @@
--- KOReader Remote v0.2.3
--- Minimal local HTTP remote control for page turning.
+-- KOReader Remote v0.3.0
+-- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
 local Device = require("device")
@@ -10,7 +10,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.2.3"
+local VERSION = "0.3.0"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
@@ -33,14 +33,32 @@ local Remote = WidgetContainer:extend{
     is_doc_only = false,
 }
 
+local function isUsableIPv4(address)
+    if type(address) ~= "string"
+        or address == "0.0.0.0"
+        or address == "127.0.0.1" then
+        return false
+    end
+
+    local a, b, c, d = address:match(
+        "^(%d+)%.(%d+)%.(%d+)%.(%d+)$"
+    )
+
+    if not a then
+        return false
+    end
+
+    a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+
+    return a <= 255 and b <= 255 and c <= 255 and d <= 255
+end
+
 function Remote:init()
-    -- Read settings only after KOReader has instantiated the plugin.
-    -- This mirrors the lifecycle used by KOReader's built-in plugins.
     self.port = tonumber(G_reader_settings:readSetting(PORT_SETTINGS_KEY))
         or DEFAULT_PORT
     self.autostart = G_reader_settings:isTrue(AUTOSTART_SETTINGS_KEY)
 
-    -- Migrate settings written by the unreleased/broken v0.2.x builds.
+    -- Migrate settings written by previous v0.2 builds.
     local legacy = G_reader_settings:readSetting(LEGACY_SETTINGS_KEY)
     if type(legacy) == "table" then
         if legacy.port and not G_reader_settings:has(PORT_SETTINGS_KEY) then
@@ -55,7 +73,6 @@ function Remote:init()
         end
     end
 
-    -- Register the menu before attempting optional autostart.
     self.ui.menu:registerToMainMenu(self)
     logger.info("KOReaderRemote: plugin initialized, version", VERSION)
 
@@ -87,6 +104,171 @@ function Remote:setAutostart(enabled)
     else
         G_reader_settings:delSetting(AUTOSTART_SETTINGS_KEY)
     end
+end
+
+function Remote:detectLocalIP()
+    -- Preferred method: ask the kernel which local address it would use for
+    -- the default IPv4 route. This creates no real network traffic.
+    local socket = require("socket")
+    local udp, err = socket.udp()
+
+    if udp then
+        local ok
+        ok, err = udp:setpeername("203.0.113.1", "53")
+
+        if ok then
+            local address = udp:getsockname()
+            udp:close()
+
+            if isUsableIPv4(address) then
+                return address
+            end
+        else
+            udp:close()
+            logger.dbg(
+                "KOReaderRemote: UDP route IP detection failed:",
+                err
+            )
+        end
+    else
+        logger.dbg(
+            "KOReaderRemote: could not create UDP socket for IP detection:",
+            err
+        )
+    end
+
+    -- Fallback for platforms where the Lua socket route method is unavailable.
+    local NetworkMgr = require("ui/network/manager")
+    local interface = NetworkMgr.interface
+
+    if not interface and NetworkMgr.getNetworkInterfaceName then
+        interface = NetworkMgr:getNetworkInterfaceName()
+    end
+
+    local commands = {}
+
+    if type(interface) == "string"
+        and interface:match("^[%w_.:-]+$") then
+        table.insert(
+            commands,
+            string.format(
+                "ip -4 -o addr show dev %s scope global 2>/dev/null",
+                interface
+            )
+        )
+        table.insert(
+            commands,
+            string.format("ifconfig %s 2>/dev/null", interface)
+        )
+    end
+
+    table.insert(commands, "hostname -I 2>/dev/null")
+
+    for _, command in ipairs(commands) do
+        local opened, pipe = pcall(io.popen, command)
+
+        if opened and pipe then
+            local output = pipe:read("*all") or ""
+            pipe:close()
+
+            for address in output:gmatch("(%d+%.%d+%.%d+%.%d+)") do
+                if isUsableIPv4(address) then
+                    return address
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function Remote:refreshConnectionInfo()
+    self.local_ip = self:detectLocalIP()
+
+    if self.local_ip then
+        self.connection_url = string.format(
+            "http://%s:%d/",
+            self.local_ip,
+            self.running_port or self:getPort()
+        )
+        logger.info(
+            "KOReaderRemote: detected connection URL",
+            self.connection_url
+        )
+    else
+        self.connection_url = nil
+        logger.warn("KOReaderRemote: no usable IPv4 address detected")
+    end
+
+    return self.connection_url
+end
+
+function Remote:getConnectionURL(refresh)
+    if refresh or not self.connection_url then
+        return self:refreshConnectionInfo()
+    end
+
+    return self.connection_url
+end
+
+function Remote:showQRCode()
+    local url = self:getConnectionURL(true)
+
+    if not url then
+        UIManager:show(InfoMessage:new{
+            text = _(
+                "No network address could be detected.\n\n"
+                .. "Connect the Kindle to Wi-Fi and try again."
+            ),
+        })
+        return
+    end
+
+    local QRMessage = require("ui/widget/qrmessage")
+
+    UIManager:show(QRMessage:new{
+        text = url,
+        width = Device.screen:getWidth(),
+        height = Device.screen:getHeight(),
+    })
+end
+
+function Remote:showPairingDialog()
+    local url = self:getConnectionURL(true)
+
+    if not url then
+        UIManager:show(InfoMessage:new{
+            text = string.format(
+                _(
+                    "KOReader Remote is running on port %d, "
+                    .. "but no network address could be detected.\n\n"
+                    .. "Connect the Kindle to Wi-Fi and select "
+                    .. "\"Pair phone\" again."
+                ),
+                self.running_port or self:getPort()
+            ),
+        })
+        return
+    end
+
+    local ConfirmBox = require("ui/widget/confirmbox")
+
+    UIManager:show(ConfirmBox:new{
+        text = string.format(
+            _(
+                "KOReader Remote is running.\n\n"
+                .. "IP address: %s\n\n"
+                .. "Pairing link:\n%s"
+            ),
+            self.local_ip,
+            url
+        ),
+        ok_text = _("Show QR code"),
+        ok_callback = function()
+            self:showQRCode()
+        end,
+        cancel_text = _("Close"),
+    })
 end
 
 function Remote:openFirewall(port)
@@ -127,6 +309,9 @@ end
 
 function Remote:start(silent)
     if self:isRunning() then
+        if not silent then
+            self:showPairingDialog()
+        end
         return true
     end
 
@@ -165,15 +350,10 @@ function Remote:start(silent)
     self.running_port = port
     self.http_messagequeue = UIManager:insertZMQ(self.http_socket)
     self:openFirewall(port)
+    self:refreshConnectionInfo()
 
     if not silent then
-        UIManager:show(InfoMessage:new{
-            text = string.format(
-                _("KOReader Remote is running.\n\nOpen this address on your phone:\nhttp://KINDLE-IP:%d/"),
-                port
-            ),
-            timeout = 5,
-        })
+        self:showPairingDialog()
     end
 
     logger.info("KOReaderRemote: server started")
@@ -183,6 +363,8 @@ end
 function Remote:stop()
     if not self:isRunning() then
         self.running_port = nil
+        self.connection_url = nil
+        self.local_ip = nil
         self:closeFirewall()
         return
     end
@@ -200,8 +382,23 @@ function Remote:stop()
     end
 
     self.running_port = nil
+    self.connection_url = nil
+    self.local_ip = nil
     self:closeFirewall()
     logger.info("KOReaderRemote: server stopped")
+end
+
+function Remote:onNetworkConnected()
+    if self:isRunning() then
+        self:refreshConnectionInfo()
+    elseif self.autostart then
+        self:start(true)
+    end
+end
+
+function Remote:onNetworkDisconnected()
+    self.connection_url = nil
+    self.local_ip = nil
 end
 
 function Remote:onEnterStandby()
@@ -322,11 +519,20 @@ function Remote:onRequest(data, request_id)
     end
 
     if uri == "/api/ping" then
+        local ip_json = self.local_ip
+            and string.format('"%s"', self.local_ip)
+            or "null"
+        local url_json = self.connection_url
+            and string.format('"%s"', self.connection_url)
+            or "null"
         local body = string.format(
-            '{"ok":true,"version":"%s","port":%d,"autostart":%s}',
+            '{"ok":true,"version":"%s","port":%d,'
+            .. '"autostart":%s,"ip":%s,"url":%s}',
             VERSION,
             self.running_port or self:getPort(),
-            self.autostart and "true" or "false"
+            self.autostart and "true" or "false",
+            ip_json,
+            url_json
         )
 
         return self:sendResponse(
@@ -426,9 +632,6 @@ end
 function Remote:addToMainMenu(menu_items)
     menu_items.koreader_remote = {
         text = _("KOReader Remote"),
-        -- KOReader uses a fixed menu-order table. Third-party entries need
-        -- a sorting hint so MenuSorter knows which submenu should contain
-        -- the otherwise unknown item key.
         sorting_hint = "tools",
         sub_item_table = {
             {
@@ -452,6 +655,10 @@ function Remote:addToMainMenu(menu_items)
             },
             {
                 text_func = function()
+                    if self:isRunning() and self.connection_url then
+                        return self.connection_url
+                    end
+
                     if self:isRunning() then
                         return string.format(
                             _("Listening on port %d"),
@@ -464,7 +671,19 @@ function Remote:addToMainMenu(menu_items)
                 enabled_func = function()
                     return self:isRunning()
                 end,
+                callback = function()
+                    self:showPairingDialog()
+                end,
                 separator = true,
+            },
+            {
+                text = _("Pair phone / show QR code"),
+                enabled_func = function()
+                    return self:isRunning()
+                end,
+                callback = function()
+                    self:showPairingDialog()
+                end,
             },
             {
                 text = _("Auto start remote server"),
@@ -482,20 +701,6 @@ function Remote:addToMainMenu(menu_items)
                 keep_menu_open = true,
                 callback = function(touchmenu_instance)
                     self:showPortDialog(touchmenu_instance)
-                end,
-            },
-            {
-                text = _("Show connection address"),
-                enabled_func = function()
-                    return self:isRunning()
-                end,
-                callback = function()
-                    UIManager:show(InfoMessage:new{
-                        text = string.format(
-                            _("Open on your phone:\nhttp://KINDLE-IP:%d/"),
-                            self.running_port or self:getPort()
-                        ),
-                    })
                 end,
             },
         },

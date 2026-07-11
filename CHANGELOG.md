@@ -1,43 +1,25 @@
 # Changelog
 
+## v0.3.0
+
+- Added automatic local IPv4 address detection.
+- Added display of the actual Kindle IP address.
+- Added a complete pairing link using the detected IP and configured port.
+- Added QR-code pairing using KOReader's built-in QR widget.
+- Added a **Pair phone / show QR code** menu action.
+- The server-start dialog now shows the real connection details.
+- Added `ip` and `url` fields to `/api/ping`.
+- Refreshes the connection address after KOReader receives a network-connected event.
+- No access token or authentication was added.
+
 ## v0.2.3
 
 - Fixed the missing menu entry by adding `sorting_hint = "tools"`.
-- KOReader Remote now appears directly under **Tools**.
-- No HTTP API or web-interface changes.
-
-## v0.2.2
-
-- Fixed plugin initialization by loading settings inside `init()`.
-- Changed settings storage to separate KOReader-native keys.
-- Added migration support for the previous v0.2.x settings table.
-- Fixed the port dialog input getter.
-- Restored the **KOReader Remote** entry in the **Tools** menu.
-
-## v0.2.1
-
-- Fixed plugin loading on fresh installations.
-- Safely handles missing or invalid saved settings.
-- Restores the **KOReader Remote** entry in the **Tools** menu.
-- No changes to the HTTP API or web interface.
-
-## v0.2.0
-
-- Added a persistent autostart option.
-- Added automatic restart after standby and resume when autostart is enabled.
-- Added a configurable server port.
-- Improved firewall cleanup when the port changes.
-- Added version and server settings to `/api/ping`.
-- Kept KOReader Remote directly in the **Tools** menu.
-
-## v0.1.1
-
-- Moved **KOReader Remote** directly into the **Tools** menu.
-- No functional changes to the HTTP server or remote-control interface.
+- KOReader Remote appears directly under **Tools**.
+- Added autostart, resume handling and a configurable port.
 
 ## v0.1.0
 
 - Initial working release.
-- Local HTTP server on port 8081.
+- Local HTTP server and phone web interface.
 - Previous and next page controls.
-- Minimal phone web interface.

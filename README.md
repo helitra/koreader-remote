@@ -1,23 +1,24 @@
-# KOReader Remote v0.2.3
+# KOReader Remote v0.3.0
 
-A minimal KOReader plugin that serves a local phone-friendly remote control.
+A local-network remote control plugin for KOReader.
 
 ## Features
 
-- Start/stop directly from KOReader's **Tools** menu
+- Previous and next page controls from a phone browser
+- Automatic local IPv4 address detection
+- Displays the real Kindle IP address and complete remote URL
+- QR-code pairing that opens the remote website directly
+- Pairing dialog shown after manually starting the server
 - Persistent autostart option
-- Automatically restarts after standby/resume when autostart is enabled
+- Automatic restart after standby/resume when autostart is enabled
 - Configurable TCP port
 - Default port: 8081
-- Previous page
-- Next page
-- Local status endpoint
-- Opens/removes Kindle firewall rules while running
-- Stops cleanly on standby, suspend, KOReader exit, or UI close
+- Kindle firewall handling
+- Extended `/api/ping` information
 
 ## Installation
 
-1. Stop the currently running KOReader Remote server.
+1. Stop the existing KOReader Remote server.
 2. Copy the complete folder `koreaderremote.koplugin` into:
    `koreader/plugins/`
 3. Replace the previous plugin folder when upgrading.
@@ -25,8 +26,19 @@ A minimal KOReader plugin that serves a local phone-friendly remote control.
 5. Open a book.
 6. Go to:
    `Tools -> KOReader Remote -> Start remote server`
-7. On a phone in the same Wi-Fi network, open:
-   `http://KINDLE-IP:8081/`
+7. KOReader displays the detected IP address and pairing link.
+8. Select **Show QR code** and scan it with the phone camera.
+
+## Pairing
+
+The QR code contains the complete local URL, for example:
+
+`http://192.168.1.42:8081/`
+
+Scanning it opens the KOReader Remote website directly. No app is required.
+
+This is convenience pairing only. Version 0.3.0 does not use an access token
+or authentication.
 
 ## Autostart
 
@@ -34,7 +46,9 @@ Enable:
 
 `Tools -> KOReader Remote -> Auto start remote server`
 
-When enabled, the server starts with KOReader and starts again after standby/resume.
+When enabled, the server starts with KOReader and starts again after
+standby/resume. Open **Pair phone / show QR code** to display the current
+network address.
 
 ## Custom port
 
@@ -42,34 +56,30 @@ Open:
 
 `Tools -> KOReader Remote -> Port`
 
-Choose a port between 1 and 65535. If the server is already running, it is restarted on the new port.
+Choose a port between 1 and 65535.
 
-## Test endpoints
+## API
 
-- `http://KINDLE-IP:PORT/api/ping`
-- `http://KINDLE-IP:PORT/api/next`
-- `http://KINDLE-IP:PORT/api/previous`
+- `GET /api/ping`
+- `GET /api/next`
+- `GET /api/previous`
+
+Example `/api/ping` response:
+
+```json
+{
+  "ok": true,
+  "version": "0.3.0",
+  "port": 8081,
+  "autostart": false,
+  "ip": "192.168.1.42",
+  "url": "http://192.168.1.42:8081/"
+}
+```
 
 ## Notes
 
-- Version 0.2.3 has no authentication.
-- Use it only on a trusted local network.
-- A fully sleeping Kindle cannot be awakened through this server.
-
-## v0.2.1 hotfix
-
-This release fixes plugin loading on fresh installations where no saved
-KOReader Remote settings exist yet.
-
-## v0.2.2 hotfix
-
-- Moves all KOReader settings access into the plugin `init()` lifecycle.
-- Uses the same settings pattern as KOReader's built-in plugins.
-- Fixes the missing **KOReader Remote** entry in the **Tools** menu.
-- Fixes the port dialog to use `getInputText()`.
-
-## v0.2.3 hotfix
-
-- Adds `sorting_hint = "tools"` to the KOReader Remote menu entry.
-- Places the plugin directly under **Tools → KOReader Remote**.
-- Fixes the missing menu item introduced in v0.1.1.
+- Use the plugin only on a trusted local network.
+- The phone and Kindle must be able to communicate with each other.
+- Guest Wi-Fi networks may block device-to-device communication.
+- A fully sleeping Kindle cannot be awakened through the remote server.

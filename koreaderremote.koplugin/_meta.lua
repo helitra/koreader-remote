@@ -2,5 +2,5 @@ local _ = require("gettext")
 
 return {
     fullname = _("KOReader Remote"),
-    description = _([[Control page turns from a phone on the same local network.]]),
+    description = _([[Control KOReader page turns from a phone using an automatically detected local address and QR-code pairing.]]),
 }
