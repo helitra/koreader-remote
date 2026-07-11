@@ -143,11 +143,13 @@
     });
 
     fetch("/api/ping", { cache: "no-store" })
-      .then((response) => {
+      .then(async (response) => {
         if (!response.ok) {
           throw new Error("HTTP " + response.status);
         }
-        setStatus("Verbunden");
+
+        const info = await response.json();
+        setStatus("Verbunden · v" + info.version);
       })
       .catch(() => setStatus("Keine Verbindung"));
   </script>

@@ -1,4 +1,4 @@
--- KOReader Remote v0.1.1
+-- KOReader Remote v0.2.3
 -- Minimal local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -10,7 +10,11 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local PORT = 8081
+local VERSION = "0.2.3"
+local DEFAULT_PORT = 8081
+local LEGACY_SETTINGS_KEY = "koreaderremote"
+local PORT_SETTINGS_KEY = "koreaderremote_port"
+local AUTOSTART_SETTINGS_KEY = "koreaderremote_autostart"
 local PLUGIN_DIR = DataStorage:getDataDir() .. "/plugins/koreaderremote.koplugin"
 local INDEX_FILE = PLUGIN_DIR .. "/web/index.html"
 
@@ -30,56 +34,109 @@ local Remote = WidgetContainer:extend{
 }
 
 function Remote:init()
+    -- Read settings only after KOReader has instantiated the plugin.
+    -- This mirrors the lifecycle used by KOReader's built-in plugins.
+    self.port = tonumber(G_reader_settings:readSetting(PORT_SETTINGS_KEY))
+        or DEFAULT_PORT
+    self.autostart = G_reader_settings:isTrue(AUTOSTART_SETTINGS_KEY)
+
+    -- Migrate settings written by the unreleased/broken v0.2.x builds.
+    local legacy = G_reader_settings:readSetting(LEGACY_SETTINGS_KEY)
+    if type(legacy) == "table" then
+        if legacy.port and not G_reader_settings:has(PORT_SETTINGS_KEY) then
+            self.port = tonumber(legacy.port) or DEFAULT_PORT
+            G_reader_settings:saveSetting(PORT_SETTINGS_KEY, self.port)
+        end
+
+        if legacy.autostart == true
+            and not G_reader_settings:has(AUTOSTART_SETTINGS_KEY) then
+            self.autostart = true
+            G_reader_settings:makeTrue(AUTOSTART_SETTINGS_KEY)
+        end
+    end
+
+    -- Register the menu before attempting optional autostart.
     self.ui.menu:registerToMainMenu(self)
+    logger.info("KOReaderRemote: plugin initialized, version", VERSION)
+
+    if self.autostart then
+        UIManager:nextTick(function()
+            self:start(true)
+        end)
+    end
 end
 
 function Remote:isRunning()
     return self.http_socket ~= nil
 end
 
-function Remote:openFirewall()
-    if not Device:isKindle() or self.firewall_open then
+function Remote:getPort()
+    return tonumber(self.port) or DEFAULT_PORT
+end
+
+function Remote:setPort(port)
+    self.port = math.floor(port)
+    G_reader_settings:saveSetting(PORT_SETTINGS_KEY, self.port)
+end
+
+function Remote:setAutostart(enabled)
+    self.autostart = enabled == true
+
+    if self.autostart then
+        G_reader_settings:makeTrue(AUTOSTART_SETTINGS_KEY)
+    else
+        G_reader_settings:delSetting(AUTOSTART_SETTINGS_KEY)
+    end
+end
+
+function Remote:openFirewall(port)
+    if not Device:isKindle() or self.firewall_port then
         return
     end
 
     os.execute(string.format(
         "iptables -A INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT",
-        PORT
+        port
     ))
     os.execute(string.format(
         "iptables -A OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT",
-        PORT
+        port
     ))
-    self.firewall_open = true
+
+    self.firewall_port = port
 end
 
 function Remote:closeFirewall()
-    if not Device:isKindle() or not self.firewall_open then
+    if not Device:isKindle() or not self.firewall_port then
         return
     end
 
+    local port = self.firewall_port
+
     os.execute(string.format(
         "iptables -D INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT",
-        PORT
+        port
     ))
     os.execute(string.format(
         "iptables -D OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT",
-        PORT
+        port
     ))
-    self.firewall_open = false
+
+    self.firewall_port = nil
 end
 
-function Remote:start()
+function Remote:start(silent)
     if self:isRunning() then
         return true
     end
 
-    logger.info("KOReaderRemote: starting server on port", PORT)
+    local port = self:getPort()
+    logger.info("KOReaderRemote: starting server on port", port)
 
     local ServerClass = require("ui/message/simpletcpserver")
     self.http_socket = ServerClass:new{
         host = "*",
-        port = PORT,
+        port = port,
         receiveCallback = function(data, request_id)
             return self:onRequest(data, request_id)
         end,
@@ -89,26 +146,35 @@ function Remote:start()
     if not ok then
         logger.err("KOReaderRemote: failed to start server:", err)
         self.http_socket = nil
-        UIManager:show(InfoMessage:new{
-            text = string.format(
-                _("KOReader Remote could not start on port %d.\n\n%s"),
-                PORT,
-                tostring(err)
-            ),
-        })
+        self.running_port = nil
+        self:closeFirewall()
+
+        if not silent then
+            UIManager:show(InfoMessage:new{
+                text = string.format(
+                    _("KOReader Remote could not start on port %d.\n\n%s"),
+                    port,
+                    tostring(err)
+                ),
+            })
+        end
+
         return false
     end
 
+    self.running_port = port
     self.http_messagequeue = UIManager:insertZMQ(self.http_socket)
-    self:openFirewall()
+    self:openFirewall(port)
 
-    UIManager:show(InfoMessage:new{
-        text = string.format(
-            _("KOReader Remote is running.\n\nOpen this address on your phone:\nhttp://KINDLE-IP:%d/"),
-            PORT
-        ),
-        timeout = 5,
-    })
+    if not silent then
+        UIManager:show(InfoMessage:new{
+            text = string.format(
+                _("KOReader Remote is running.\n\nOpen this address on your phone:\nhttp://KINDLE-IP:%d/"),
+                port
+            ),
+            timeout = 5,
+        })
+    end
 
     logger.info("KOReaderRemote: server started")
     return true
@@ -116,6 +182,7 @@ end
 
 function Remote:stop()
     if not self:isRunning() then
+        self.running_port = nil
         self:closeFirewall()
         return
     end
@@ -132,6 +199,7 @@ function Remote:stop()
         self.http_messagequeue = nil
     end
 
+    self.running_port = nil
     self:closeFirewall()
     logger.info("KOReaderRemote: server stopped")
 end
@@ -142,6 +210,18 @@ end
 
 function Remote:onSuspend()
     self:stop()
+end
+
+function Remote:onLeaveStandby()
+    if self.autostart and not self:isRunning() then
+        self:start(true)
+    end
+end
+
+function Remote:onResume()
+    if self.autostart and not self:isRunning() then
+        self:start(true)
+    end
 end
 
 function Remote:onExit()
@@ -178,8 +258,6 @@ function Remote:sendResponse(request_id, status, content_type, body)
         self.http_socket:send(table.concat(headers, "\r\n"), request_id)
     end
 
-    -- Treat remote activity like an input event so KOReader can reset
-    -- its normal idle/suspend timers.
     return Event:new("InputEvent")
 end
 
@@ -211,7 +289,6 @@ function Remote:onRequest(data, request_id)
         )
     end
 
-    -- Ignore the query string for v0.1.
     uri = uri:match("^([^?]*)") or uri
     logger.dbg("KOReaderRemote:", method, uri)
 
@@ -235,6 +312,7 @@ function Remote:onRequest(data, request_id)
                 "Remote UI file is missing"
             )
         end
+
         return self:sendResponse(
             request_id,
             200,
@@ -244,11 +322,18 @@ function Remote:onRequest(data, request_id)
     end
 
     if uri == "/api/ping" then
+        local body = string.format(
+            '{"ok":true,"version":"%s","port":%d,"autostart":%s}',
+            VERSION,
+            self.running_port or self:getPort(),
+            self.autostart and "true" or "false"
+        )
+
         return self:sendResponse(
             request_id,
             200,
             "application/json; charset=utf-8",
-            '{"ok":true,"version":"0.1.0"}'
+            body
         )
     end
 
@@ -284,17 +369,74 @@ function Remote:onRequest(data, request_id)
     )
 end
 
+function Remote:showPortDialog(touchmenu_instance)
+    local InputDialog = require("ui/widget/inputdialog")
+
+    self.port_dialog = InputDialog:new{
+        title = _("Set remote-control port"),
+        input = tostring(self:getPort()),
+        input_type = "number",
+        input_hint = tostring(DEFAULT_PORT),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function()
+                        UIManager:close(self.port_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    is_enter_default = true,
+                    callback = function()
+                        local port = tonumber(self.port_dialog:getInputText())
+
+                        if not port or port < 1 or port > 65535 then
+                            UIManager:show(InfoMessage:new{
+                                text = _("Enter a port between 1 and 65535."),
+                            })
+                            return
+                        end
+
+                        local was_running = self:isRunning()
+
+                        if was_running then
+                            self:stop()
+                        end
+
+                        self:setPort(port)
+                        UIManager:close(self.port_dialog)
+
+                        if was_running then
+                            self:start()
+                        end
+
+                        touchmenu_instance:updateItems()
+                    end,
+                },
+            },
+        },
+    }
+
+    UIManager:show(self.port_dialog)
+    self.port_dialog:onShowKeyboard()
+end
+
 function Remote:addToMainMenu(menu_items)
     menu_items.koreader_remote = {
         text = _("KOReader Remote"),
-        -- No sorting_hint: place the plugin directly in KOReader's
-        -- Tools menu instead of Tools -> More tools.
+        -- KOReader uses a fixed menu-order table. Third-party entries need
+        -- a sorting hint so MenuSorter knows which submenu should contain
+        -- the otherwise unknown item key.
+        sorting_hint = "tools",
         sub_item_table = {
             {
                 text_func = function()
                     if self:isRunning() then
                         return _("Stop remote server")
                     end
+
                     return _("Start remote server")
                 end,
                 keep_menu_open = true,
@@ -304,20 +446,43 @@ function Remote:addToMainMenu(menu_items)
                     else
                         self:start()
                     end
+
                     touchmenu_instance:updateItems()
                 end,
             },
             {
                 text_func = function()
                     if self:isRunning() then
-                        return string.format(_("Listening on port %d"), PORT)
+                        return string.format(
+                            _("Listening on port %d"),
+                            self.running_port or self:getPort()
+                        )
                     end
+
                     return _("Not running")
                 end,
                 enabled_func = function()
                     return self:isRunning()
                 end,
                 separator = true,
+            },
+            {
+                text = _("Auto start remote server"),
+                checked_func = function()
+                    return self.autostart == true
+                end,
+                callback = function()
+                    self:setAutostart(not self.autostart)
+                end,
+            },
+            {
+                text_func = function()
+                    return string.format(_("Port: %d"), self:getPort())
+                end,
+                keep_menu_open = true,
+                callback = function(touchmenu_instance)
+                    self:showPortDialog(touchmenu_instance)
+                end,
             },
             {
                 text = _("Show connection address"),
@@ -328,7 +493,7 @@ function Remote:addToMainMenu(menu_items)
                     UIManager:show(InfoMessage:new{
                         text = string.format(
                             _("Open on your phone:\nhttp://KINDLE-IP:%d/"),
-                            PORT
+                            self.running_port or self:getPort()
                         ),
                     })
                 end,
