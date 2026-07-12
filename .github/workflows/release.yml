@@ -121,6 +121,13 @@ jobs:
           grep -Fq 'type(highlight.showHighlightPrompt) == "function"' "${INTERACTION}"
           grep -Fq 'highlight:saveHighlight(true)' "${INTERACTION}"
           grep -Fq 'xpcall(callback, debug.traceback)' "${INTERACTION}"
+          grep -Fq 'if encoded == "" then' "${INTERACTION}"
+          grep -Fq 'padding ~= "=" and padding ~= "=="' "${INTERACTION}"
+          grep -Fq 'local expected_bytes = (#encoded / 4) * 3 - padding_count' "${INTERACTION}"
+          if grep -Fq '={0,2}' "${INTERACTION}"; then
+            echo "Unsupported regex-style Base64 quantifier found."
+            exit 1
+          fi
           grep -Fq 'id="note-button"' "${INDEX}"
           grep -Fq 'id="footnote-button"' "${INDEX}"
           grep -Fq 'id="oled-button"' "${INDEX}"

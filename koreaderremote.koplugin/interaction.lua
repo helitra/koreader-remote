@@ -61,17 +61,43 @@ end
 local function decodeBase64(encoded)
     encoded = trim(encoded)
 
-    if encoded == "" or #encoded % 4 ~= 0 then
+    -- An empty Base64 value represents an empty note. This is needed so a
+    -- phone can clear an existing note intentionally.
+    if encoded == "" then
+        return ""
+    end
+
+    if #encoded % 4 ~= 0 then
         return nil, "The encoded note is invalid."
     end
 
-    if not encoded:match("^[A-Za-z0-9+/]*={0,2}$") then
+    local data = encoded
+    local padding_count = 0
+    local first_padding = encoded:find("=", 1, true)
+
+    if first_padding then
+        local padding = encoded:sub(first_padding)
+
+        if padding ~= "=" and padding ~= "==" then
+            return nil, "The encoded note contains invalid padding."
+        end
+
+        data = encoded:sub(1, first_padding - 1)
+        padding_count = #padding
+    end
+
+    if data:find("[^A-Za-z0-9+/]") then
         return nil, "The encoded note contains invalid characters."
     end
 
     local ok, decoded = pcall(mime.unb64, encoded)
     if not ok or type(decoded) ~= "string" then
         return nil, "The encoded note could not be decoded."
+    end
+
+    local expected_bytes = (#encoded / 4) * 3 - padding_count
+    if #decoded ~= expected_bytes then
+        return nil, "The encoded note has an invalid length."
     end
 
     return decoded

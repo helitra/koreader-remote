@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.2
+
+### Fixed
+
+- Fixed phone-to-KOReader note pushes being rejected with **“The encoded note contains invalid characters.”**
+- Replaced an unsupported regular-expression quantifier with explicit Lua-compatible Base64 padding validation.
+- Added decoded-length validation after Base64 decoding.
+- Added support for pushing an empty note, allowing an existing note to be cleared from the phone.
+
+### Compatibility
+
+- Remote-note selection, OLED mode, footnote automation, Pull/Push routes, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart are otherwise unchanged.
+
 ## v0.8.1
 
 ### Fixed
