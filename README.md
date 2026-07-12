@@ -89,9 +89,18 @@ The list contains KOReader's three annotation types:
 - text highlights
 - highlights with notes
 
-Each entry shows its type, page or book position, chapter when available, highlighted text, and attached note. The phone view can filter the list by **All**, **Bookmarks**, **Highlights**, or **Notes**.
+Each entry shows its type, page or book position, chapter when available, highlighted text, and attached note. Plain page bookmarks are shown in italics so they are easier to distinguish from highlights and notes.
 
-Tapping an entry adds the current reading position to KOReader's navigation history and moves the Kindle to the selected annotation. The first version is deliberately read-only: it does not edit or delete annotations from the list.
+The phone view can:
+
+- filter by **All**, **Bookmarks**, **Highlights**, or **Notes**
+- search chapter names, selected text, notes, page labels, and annotation types
+- sort in book order, newest first, oldest first, or by the most recently edited annotation
+- open an annotation on the Kindle
+- add or edit a highlight note through the existing synchronized note editor
+- delete bookmarks, highlights, and notes after confirmation
+
+The first annotation jump captures the current reading position only once. You can then inspect any number of bookmarks and use **Return to reading position** to go directly back to where the excursion started. The return point remains available until it is used or the book is closed.
 
 The list is refreshed when the tab opens or when the refresh button is pressed. Up to 300 entries are returned at once to keep the local web interface responsive.
 
@@ -324,6 +333,9 @@ GET /api/v1/bookmarks
 
 ```http
 POST /api/v1/bookmarks/open?id=...
+POST /api/v1/bookmarks/return
+POST /api/v1/bookmarks/edit-note?id=...
+POST /api/v1/bookmarks/delete?id=...
 POST /api/v1/footnote/open
 POST /api/v1/note-session/push
 POST /api/v1/note-session/save
@@ -375,7 +387,7 @@ A checksum downloaded from the same GitHub release detects damaged or mismatched
 
 - Use KOReader Remote only on a trusted local network.
 - This version does not use authentication or an access token.
-- Anyone who can reach the reader IP and port can use the available controls, browse annotations from the open book, navigate to them, and submit text to an active remote-note session.
+- Anyone who can reach the reader IP and port can use the available controls, browse annotations from the open book, navigate to them, edit notes, delete annotations, and submit text to an active remote-note session.
 - Guest networks may block local device-to-device traffic.
 - A sleeping reader cannot be woken through the remote server.
 - Keeping Wi-Fi active may increase battery use.

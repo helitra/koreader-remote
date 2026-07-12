@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.8.5
+
+### Added
+
+- Added a one-tap **Return to reading position** action for bookmark excursions.
+- The original reading position is captured only before the first annotation jump and remains unchanged while browsing additional entries.
+- Added full-text filtering across annotation type, page label, chapter, highlighted text, and note text.
+- Added sorting by book order, newest, oldest, and most recently edited.
+- Added direct **Add note** and **Edit note** actions from the bookmarks tab.
+- Added confirmed deletion of bookmarks, highlights, and notes.
+- Added `POST /api/v1/bookmarks/return`.
+- Added `POST /api/v1/bookmarks/edit-note?id=...`.
+- Added `POST /api/v1/bookmarks/delete?id=...`.
+
+### Changed
+
+- Plain page bookmarks are now displayed in italics on the phone.
+- Bookmark cards now separate their open, note-edit, and delete actions.
+- The saved return point is cleared after returning or when the current book closes.
+- Only the first annotation jump is added to KOReader's native location history; later jumps do not overwrite the original return point.
+
+### Safety
+
+- Destructive actions require confirmation in the phone browser.
+- Annotation identifiers are revalidated before open, edit, or delete operations.
+- An active remote-note session must be saved or cancelled before another list item can be edited.
+
+### Compatibility
+
+- Remote-note synchronization, footnote automation, OLED mode, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart remain unchanged.
+
 ## v0.8.4
 
 ### Added

@@ -139,6 +139,7 @@ function Interaction:new(options)
     instance.get_owner = assert(options.get_owner)
     instance.ensure_server = options.ensure_server
     instance.session = nil
+    instance.bookmark_return = nil
     instance.footnote_page_key = nil
     instance.footnote_cursor = 0
 
@@ -409,6 +410,10 @@ function Interaction:onUIClosed(ui)
             false,
             true
         )
+    end
+
+    if self.bookmark_return and self.bookmark_return.ui == ui then
+        self.bookmark_return = nil
     end
 end
 
@@ -829,7 +834,35 @@ function Interaction:getBookmarkPageLabel(ui, annotation)
     return tostring(annotation.page or "")
 end
 
-function Interaction:getBookmarks()
+function Interaction:getCurrentReadingPage(ui, location)
+    if ui.paging and type(location) == "table"
+        and location[1] and location[1].page ~= nil then
+        return tostring(location[1].page)
+    end
+
+    if ui.rolling and type(location) == "table"
+        and location.xpointer
+        and ui.document
+        and type(ui.document.getPageFromXPointer) == "function" then
+        local ok, page = pcall(
+            ui.document.getPageFromXPointer,
+            ui.document,
+            location.xpointer
+        )
+
+        if ok and page ~= nil then
+            return tostring(page)
+        end
+    end
+
+    local ok, page = pcall(function()
+        return ui.document:getCurrentPage()
+    end)
+
+    return ok and page ~= nil and tostring(page) or ""
+end
+
+function Interaction:validateBookmarkUI()
     local ui = self:getUI()
 
     if not ui
@@ -837,9 +870,202 @@ function Interaction:getBookmarks()
         or not ui.annotation
         or type(ui.annotation.annotations) ~= "table"
         or not ui.bookmark then
-        return false,
+        return nil,
             "NO_DOCUMENT_OPEN",
             "Open a book on the reader first."
+    end
+
+    return ui
+end
+
+function Interaction:resolveBookmark(id)
+    if type(id) ~= "string" or id == "" then
+        return nil,
+            nil,
+            nil,
+            nil,
+            "MISSING_BOOKMARK",
+            "The bookmark identifier is missing."
+    end
+
+    local ui, code, message = self:validateBookmarkUI()
+    if not ui then
+        return nil, nil, nil, nil, code, message
+    end
+
+    for index, annotation in ipairs(ui.annotation.annotations) do
+        if annotationIdentity(index, ui, annotation) == id then
+            return ui,
+                annotation,
+                index,
+                annotationType(ui, annotation)
+        end
+    end
+
+    return nil,
+        nil,
+        nil,
+        nil,
+        "BOOKMARK_CHANGED",
+        "The bookmark list changed. Refresh it and try again."
+end
+
+function Interaction:getBookmarkReturnState(ui)
+    local saved = self.bookmark_return
+
+    if not saved then
+        return {
+            available = false,
+        }
+    end
+
+    if not ui
+        or saved.ui ~= ui
+        or not ui.document
+        or ui.document.file ~= saved.document_file then
+        self.bookmark_return = nil
+        return {
+            available = false,
+        }
+    end
+
+    return {
+        available = true,
+        page = saved.page or "",
+        created_at = saved.created_at,
+    }
+end
+
+function Interaction:beginBookmarkExcursion(ui)
+    local current_state = self:getBookmarkReturnState(ui)
+    if current_state.available then
+        return true, current_state
+    end
+
+    if not ui.link or type(ui.link.getCurrentLocation) ~= "function" then
+        return false,
+            "RETURN_NOT_SUPPORTED",
+            "KOReader could not capture the current reading position."
+    end
+
+    local ok, location = pcall(
+        ui.link.getCurrentLocation,
+        ui.link
+    )
+
+    if not ok or type(location) ~= "table" then
+        return false,
+            "RETURN_NOT_SUPPORTED",
+            "KOReader could not capture the current reading position."
+    end
+
+    local saved = {
+        ui = ui,
+        document_file = ui.document.file,
+        location = location,
+        page = self:getCurrentReadingPage(ui, location),
+        created_at = os.time(),
+        added_to_history = false,
+    }
+
+    if type(ui.link.addCurrentLocationToStack) == "function" then
+        local stack_ok, stack_err = pcall(
+            ui.link.addCurrentLocationToStack,
+            ui.link,
+            location
+        )
+
+        if stack_ok then
+            saved.added_to_history = true
+        else
+            logger.warn(
+                "KOReaderRemote: could not add return point to history:",
+                stack_err
+            )
+        end
+    end
+
+    self.bookmark_return = saved
+    return true, self:getBookmarkReturnState(ui)
+end
+
+function Interaction:removeBookmarkReturnFromHistory(ui, saved)
+    if not saved.added_to_history
+        or not ui.link
+        or type(ui.link.location_stack) ~= "table" then
+        return
+    end
+
+    for index = #ui.link.location_stack, 1, -1 do
+        if ui.link.location_stack[index] == saved.location then
+            table.remove(ui.link.location_stack, index)
+            return
+        end
+    end
+end
+
+function Interaction:returnToReadingPosition()
+    local ui, code, message = self:validateBookmarkUI()
+    if not ui then
+        return false, code, message
+    end
+
+    local saved = self.bookmark_return
+    local state = self:getBookmarkReturnState(ui)
+
+    if not saved or not state.available then
+        return false,
+            "NO_RETURN_POSITION",
+            "No reading position is currently saved."
+    end
+
+    local controller
+    if ui.rolling
+        and type(ui.rolling.onRestoreBookLocation) == "function" then
+        controller = ui.rolling
+    elseif ui.paging
+        and type(ui.paging.onRestoreBookLocation) == "function" then
+        controller = ui.paging
+    end
+
+    if not controller then
+        return false,
+            "RETURN_NOT_SUPPORTED",
+            "KOReader cannot restore this reading position."
+    end
+
+    local ok, err = pcall(
+        controller.onRestoreBookLocation,
+        controller,
+        saved.location
+    )
+
+    if not ok then
+        logger.err(
+            "KOReaderRemote: return to reading position failed:",
+            err
+        )
+        return false,
+            "RETURN_FAILED",
+            "KOReader could not restore the saved reading position."
+    end
+
+    self:removeBookmarkReturnFromHistory(ui, saved)
+    self.bookmark_return = nil
+
+    return true, {
+        action = "reading_position_restored",
+        page = saved.page or "",
+        return_position = {
+            available = false,
+        },
+    }
+end
+
+function Interaction:getBookmarks()
+    local ui, code, message = self:validateBookmarkUI()
+    if not ui then
+        return false, code, message
     end
 
     local annotations = ui.annotation.annotations
@@ -858,6 +1084,7 @@ function Interaction:getBookmarks()
         if #items < MAX_BOOKMARK_ITEMS then
             items[#items + 1] = {
                 id = annotationIdentity(index, ui, annotation),
+                order = index,
                 type = item_type,
                 page = self:getBookmarkPageLabel(ui, annotation),
                 chapter = utf8Prefix(
@@ -876,6 +1103,9 @@ function Interaction:getBookmarks()
                 datetime_updated = tostring(
                     annotation.datetime_updated or ""
                 ),
+                can_edit_note = item_type == "highlight"
+                    or item_type == "note",
+                can_delete = true,
             }
         end
     end
@@ -886,59 +1116,30 @@ function Interaction:getBookmarks()
         returned = #items,
         truncated = #annotations > #items,
         counts = counts,
+        return_position = self:getBookmarkReturnState(ui),
         items = items,
     }
 end
 
 function Interaction:openBookmark(id)
-    if type(id) ~= "string" or id == "" then
+    local ui, selected, _, selected_type, code, message =
+        self:resolveBookmark(id)
+
+    if not ui then
+        return false, code, message
+    end
+
+    if type(ui.bookmark.gotoBookmark) ~= "function" then
         return false,
-            "MISSING_BOOKMARK",
-            "The bookmark identifier is missing."
+            "BOOKMARK_OPEN_FAILED",
+            "KOReader cannot open bookmarks in this view."
     end
 
-    local ui = self:getUI()
+    local return_ok, return_result, return_message =
+        self:beginBookmarkExcursion(ui)
 
-    if not ui
-        or not ui.document
-        or not ui.annotation
-        or type(ui.annotation.annotations) ~= "table"
-        or not ui.bookmark
-        or type(ui.bookmark.gotoBookmark) ~= "function" then
-        return false,
-            "NO_DOCUMENT_OPEN",
-            "Open a book on the reader first."
-    end
-
-    local selected
-    local selected_type
-
-    for index, annotation in ipairs(ui.annotation.annotations) do
-        if annotationIdentity(index, ui, annotation) == id then
-            selected = annotation
-            selected_type = annotationType(ui, annotation)
-            break
-        end
-    end
-
-    if not selected then
-        return false,
-            "BOOKMARK_CHANGED",
-            "The bookmark list changed. Refresh it and try again."
-    end
-
-    if ui.link and type(ui.link.addCurrentLocationToStack) == "function" then
-        local stack_ok, stack_err = pcall(
-            ui.link.addCurrentLocationToStack,
-            ui.link
-        )
-
-        if not stack_ok then
-            logger.warn(
-                "KOReaderRemote: could not add bookmark origin to history:",
-                stack_err
-            )
-        end
+    if not return_ok then
+        return false, return_result, return_message
     end
 
     local ok, err = pcall(
@@ -959,6 +1160,94 @@ function Interaction:openBookmark(id)
         action = "bookmark_opened",
         type = selected_type,
         page = self:getBookmarkPageLabel(ui, selected),
+        return_position = return_result,
+    }
+end
+
+function Interaction:editBookmarkNote(id)
+    local ui, _, index, item_type, code, message =
+        self:resolveBookmark(id)
+
+    if not ui then
+        return false, code, message
+    end
+
+    if item_type == "bookmark" then
+        return false,
+            "NOTE_NOT_SUPPORTED",
+            "Page bookmarks do not have an editable highlight note."
+    end
+
+    if self.session then
+        return false,
+            "NOTE_SESSION_ACTIVE",
+            "Save or cancel the currently open remote note first."
+    end
+
+    if not ui.highlight then
+        return false,
+            "NOTE_NOT_SUPPORTED",
+            "KOReader cannot edit this note in the current view."
+    end
+
+    local started = self:startNoteSession(
+        ui.highlight,
+        index,
+        false
+    )
+
+    if not started then
+        return false,
+            "NOTE_OPEN_FAILED",
+            "The note editor could not be opened."
+    end
+
+    return true, {
+        action = "note_editor_opened",
+        session = self:getNoteSessionState(),
+    }
+end
+
+function Interaction:deleteBookmark(id)
+    local ui, selected, index, selected_type, code, message =
+        self:resolveBookmark(id)
+
+    if not ui then
+        return false, code, message
+    end
+
+    if self.session and self.session.annotation == selected then
+        self:cancelNoteSession(
+            "annotation deleted from phone",
+            true,
+            false
+        )
+    end
+
+    if type(ui.bookmark.removeItem) ~= "function" then
+        return false,
+            "DELETE_NOT_SUPPORTED",
+            "KOReader cannot delete this annotation in the current view."
+    end
+
+    local ok, err = pcall(
+        ui.bookmark.removeItem,
+        ui.bookmark,
+        selected,
+        index
+    )
+
+    if not ok then
+        logger.err("KOReaderRemote: annotation deletion failed:", err)
+        return false,
+            "DELETE_FAILED",
+            "KOReader could not delete the selected annotation."
+    end
+
+    return true, {
+        action = "bookmark_deleted",
+        type = selected_type,
+        return_position = self:getBookmarkReturnState(ui),
     }
 end
 
