@@ -20,30 +20,26 @@ https://github.com/user-attachments/assets/f81e5089-8f5f-4a0a-93cc-433873eff57c
 
 ## Features
 
-- Turn one page forward or backward
-- Use a simple website in any modern phone browser
+- Turn one page forward
+- Turn one page backward
+- Use a simple website on your phone
 - No phone app required
 - Automatically detect the reader's local IPv4 address
-- Show the full connection link and a QR code
-- Keep the same pairing URL and QR payload when IP and port did not change
-- Keep a manually started server alive when changing books or opening the file manager
-- Restore a manual session after a short sleep of up to five minutes
-- Leave a manual session stopped after a longer sleep
-- Restore the server after any sleep when autostart is enabled
-- Wait for Wi-Fi and retry automatically after standby or resume
-- Reconnect the phone website automatically when the reader becomes reachable again
-- Show compact server and network diagnostics in KOReader
-- Use a configurable server port
+- Show the full connection link
+- Create a QR code that opens the remote website
+- Optional server autostart
+- Restart the server after standby or resume when autostart is enabled
+- Use a custom server port
 - Open and remove the Kindle firewall rule when needed
 - Open the plugin directly from `Tools → KOReader Remote`
 
 ## Compatibility
 
 - **Kindle:** tested
-- **Kobo:** expected to work, but not yet tested on real Kobo hardware
+- **Kobo:** expected to work, but I have not tested it on real Kobo hardware yet
 - **Other KOReader devices:** not tested yet
 
-Feedback from other devices is welcome. Please include the exact device model, KOReader version, and plugin version when reporting a result.
+Feedback from other devices is very welcome. Please include the exact device model, KOReader version, and plugin version when reporting a result.
 
 ## Requirements
 
@@ -90,7 +86,9 @@ Guest Wi-Fi networks may block communication between your phone and reader.
 
 ## Pairing
 
-When you start the server, KOReader finds the reader's current local IP address and shows a link such as:
+When you start the server, KOReader tries to find the reader's current local IP address.
+
+It then shows a link such as:
 
 ```text
 http://192.168.1.42:8081/
@@ -110,53 +108,7 @@ You can open the pairing screen again from:
 Tools → KOReader Remote → Pair phone / show QR code
 ```
 
-The cached pairing URL and QR payload are replaced only when the detected IP address or configured port actually changes. Waking the reader with the same IP does not create a new URL.
-
 Pairing is only a quick way to open the correct local link. It does not use a password or access token.
-
-## Manual sessions and autostart
-
-`Start remote server` creates a manual session for the current KOReader run.
-
-With autostart disabled:
-
-- closing a book does not stop the server
-- opening the file manager does not stop the server
-- opening another book reuses the same server and phone page
-- a short sleep of up to five minutes restores the session
-- a longer sleep leaves the server stopped after wake-up
-- closing KOReader stops the server
-- pressing **Stop remote server** keeps it stopped for the rest of that KOReader run
-- restarting KOReader does not start it again
-
-Enable:
-
-```text
-Tools → KOReader Remote → Auto start remote server
-```
-
-With autostart enabled:
-
-- the server starts when KOReader starts
-- the server returns after short or long sleep
-- the plugin waits for Wi-Fi before restarting the server
-
-The server socket and Kindle firewall rule are removed while the reader is sleeping. A sleeping reader cannot be woken through the remote website.
-
-## Reliable reconnect
-
-After wake-up, KOReader Remote:
-
-- waits for a real network connection
-- retries after 2, 5, 10, 20, and 30 seconds when Wi-Fi is not ready
-- reacts to KOReader's `NetworkConnected` event
-- starts the server once a usable local IPv4 address exists
-- keeps the old pairing URL when the same IP returns
-- updates the URL and QR payload only after a real IP or port change
-
-The phone website checks the connection automatically. Passive status checks do not reset KOReader's sleep timer.
-
-If the reader wakes up with the same IP address, the existing browser page should reconnect without a manual reload. If the IP address changed, scan the current QR code again.
 
 ## Using the remote
 
@@ -167,28 +119,29 @@ The remote website has two large buttons:
 
 You can also use the left and right arrow keys on a device with a keyboard.
 
-When no book is open, the server remains available but page-turn requests return `409 Conflict`. The phone page then asks you to open a book on the reader.
+## Autostart
 
-## Connection status
-
-Open:
+Enable:
 
 ```text
-Tools → KOReader Remote → Test connection
+Tools → KOReader Remote → Auto start remote server
 ```
 
-The status window shows:
+When autostart is enabled:
 
-- plugin version
-- server state
-- network state
-- detected IP address
-- configured port
-- autostart state
-- current session type
-- whether a document is open
-- current URL
-- last server error
+- The server starts when KOReader starts
+- The server stops when the reader enters standby or suspend
+- The server tries to start again after the reader wakes up
+
+The QR code does not appear automatically after resume.
+
+To show the current address again, open:
+
+```text
+Tools → KOReader Remote → Pair phone / show QR code
+```
+
+It may take a few seconds for Wi-Fi to reconnect after waking the reader.
 
 ## Custom port
 
@@ -206,7 +159,13 @@ Tools → KOReader Remote → Port
 
 Enter a port between `1` and `65535`.
 
-If the server is already running, the plugin stops it and starts it again on the new port. Changing the port creates a new pairing URL and QR payload because the address really changed.
+If the server is already running, the plugin stops it and starts it again on the new port.
+
+After changing the port, the address may look like this:
+
+```text
+http://192.168.1.42:8082/
+```
 
 ## API
 
@@ -223,20 +182,13 @@ Example response:
 ```json
 {
   "ok": true,
-  "version": "0.5.0",
-  "state": "running",
+  "version": "0.4.0",
   "port": 8081,
   "autostart": false,
-  "manual_session": true,
-  "document_open": true,
   "ip": "192.168.1.42",
-  "url": "http://192.168.1.42:8081/",
-  "url_revision": 1,
-  "manual_sleep_grace_seconds": 300
+  "url": "http://192.168.1.42:8081/"
 }
 ```
-
-`url_revision` increases only when the pairing URL actually changes.
 
 ### Next page
 
@@ -259,7 +211,7 @@ GET /api/previous
 - Guest networks may block local device-to-device traffic.
 - A fully sleeping reader cannot be woken through the remote server.
 - The reader may receive a different IP address after reconnecting to Wi-Fi.
-- Scan the pairing QR code again when the old address no longer works.
+- Open the pairing screen again when the old address no longer works.
 - Keeping Wi-Fi active may increase battery use.
 
 ## License

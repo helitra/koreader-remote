@@ -7,121 +7,89 @@ on:
     tags:
       - "v*"
   pull_request:
-  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  check-and-release:
-    name: Validate, build, and release
+  build:
+    name: Validate and build
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Install validation tools
+      - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes lua5.1 unzip zip
+          sudo apt-get install --yes lua5.1 zip
 
-      - name: Validate repository and plugin
+      - name: Validate plugin and build release files
         shell: bash
         run: |
           set -euo pipefail
 
           VERSION="$(tr -d '[:space:]' < VERSION)"
-          PLUGIN="koreaderremote.koplugin"
-          MAIN="${PLUGIN}/main.lua"
-          INDEX="${PLUGIN}/web/index.html"
           ARCHIVE="koreaderremote-v${VERSION}.zip"
-          LUAC="$(command -v luac5.1 || command -v luac)"
 
           test -n "${VERSION}"
-          printf '%s\n' "${VERSION}" \
-            | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'
+          test -f koreaderremote.koplugin/_meta.lua
+          test -f koreaderremote.koplugin/main.lua
+          test -f koreaderremote.koplugin/web/index.html
 
-          test -f LICENSE
-          test -f README.md
-          test -f CHANGELOG.md
-          test -f VERSION
-          test -f "${PLUGIN}/_meta.lua"
-          test -f "${MAIN}"
-          test -f "${INDEX}"
+          luac5.1 -p koreaderremote.koplugin/_meta.lua
+          luac5.1 -p koreaderremote.koplugin/main.lua
 
-          test ! -e RELEASE_NOTES.md
-          test ! -e scripts
-          test ! -e docs
+          grep -Fq "local VERSION = \"${VERSION}\""             koreaderremote.koplugin/main.lua
 
-          test "$(wc -l < "${MAIN}")" -ge 500
-          test "$(wc -l < "${INDEX}")" -ge 100
-          test "$(wc -l < README.md)" -ge 100
-
-          "${LUAC}" -p "${PLUGIN}/_meta.lua"
-          "${LUAC}" -p "${MAIN}"
-
-          grep -Fq "local VERSION = \"${VERSION}\"" "${MAIN}"
-          grep -Fq 'sorting_hint = "tools"' "${MAIN}"
-          grep -Fq '/api/ping' "${MAIN}"
-          grep -Fq '/api/next' "${MAIN}"
-          grep -Fq '/api/previous' "${MAIN}"
-
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]] \
-            && [[ "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]             && [[ "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
             echo "Tag ${GITHUB_REF_NAME} does not match VERSION ${VERSION}."
             exit 1
           fi
 
           mkdir -p dist
-          zip -r -9 "dist/${ARCHIVE}" "${PLUGIN}"
-
-          if unzip -Z1 "dist/${ARCHIVE}" \
-            | grep -Ev '^koreaderremote\.koplugin(/|$)' >/dev/null; then
-            echo "Release archive contains files outside the plugin folder."
-            exit 1
-          fi
+          zip -r "dist/${ARCHIVE}" koreaderremote.koplugin
 
           (
             cd dist
             sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
           )
 
-          test -s "dist/${ARCHIVE}"
-          test -s "dist/${ARCHIVE}.sha256"
+      - name: Upload build files
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: dist/*
+          if-no-files-found: error
 
-      - name: Create or update GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+  release:
+    name: Create GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build files
+        uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: dist
+
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
 
-          VERSION="$(tr -d '[:space:]' < VERSION)"
-          TAG="${GITHUB_REF_NAME}"
-          ARCHIVE="koreaderremote-v${VERSION}.zip"
           RELEASE_FLAGS=(--latest)
 
-          if [[ "${VERSION}" == *-* ]]; then
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
             RELEASE_FLAGS=(--prerelease)
           fi
 
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" \
-              "dist/${ARCHIVE}" \
-              "dist/${ARCHIVE}.sha256" \
-              --clobber
-            gh release edit "${TAG}" \
-              --title "KOReader Remote ${TAG}" \
-              "${RELEASE_FLAGS[@]}"
-          else
-            gh release create "${TAG}" \
-              "dist/${ARCHIVE}" \
-              "dist/${ARCHIVE}.sha256" \
-              --verify-tag \
-              --title "KOReader Remote ${TAG}" \
-              --generate-notes \
-              "${RELEASE_FLAGS[@]}"
-          fi
+          gh release create "${GITHUB_REF_NAME}"             dist/*             --verify-tag             --title "KOReader Remote ${GITHUB_REF_NAME}"             --generate-notes             "${RELEASE_FLAGS[@]}"

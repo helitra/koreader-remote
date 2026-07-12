@@ -12,7 +12,9 @@
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     html,
     body {
@@ -48,8 +50,13 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    button:first-child { border-right: 1px solid #444; }
-    button:active { background: #333; }
+    button:first-child {
+      border-right: 1px solid #444;
+    }
+
+    button:active {
+      background: #333;
+    }
 
     #status {
       position: fixed;
@@ -76,68 +83,9 @@
   <script>
     const statusElement = document.getElementById("status");
     let requestRunning = false;
-    let reconnectTimer = null;
-    let failedPings = 0;
 
     function setStatus(text) {
       statusElement.textContent = text;
-    }
-
-    function scheduleConnectionCheck(delay) {
-      window.clearTimeout(reconnectTimer);
-      reconnectTimer = window.setTimeout(checkConnection, delay);
-    }
-
-    async function fetchWithTimeout(path, options = {}, timeout = 5000) {
-      if (typeof AbortController === "undefined") {
-        return fetch(path, options);
-      }
-
-      const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), timeout);
-
-      try {
-        return await fetch(path, {
-          ...options,
-          signal: controller.signal,
-        });
-      } finally {
-        window.clearTimeout(timer);
-      }
-    }
-
-    async function checkConnection() {
-      try {
-        const response = await fetchWithTimeout(
-          "/api/ping",
-          { cache: "no-store" }
-        );
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
-        }
-
-        const info = await response.json();
-        failedPings = 0;
-
-        if (info.document_open === false) {
-          setStatus("Buch auf dem Reader öffnen");
-        } else {
-          setStatus("Verbunden · v" + info.version);
-        }
-
-        scheduleConnectionCheck(15000);
-      } catch (error) {
-        failedPings += 1;
-        console.debug("KOReader Remote reconnect check failed:", error);
-
-        if (failedPings >= 5) {
-          setStatus("Keine Verbindung · ggf. QR neu scannen");
-        } else {
-          setStatus("Verbinde neu …");
-        }
-
-        scheduleConnectionCheck(3000);
-      }
     }
 
     async function request(path, label) {
@@ -149,42 +97,34 @@
       setStatus(label + " …");
 
       try {
-        const response = await fetchWithTimeout(path, {
+        const response = await fetch(path, {
           method: "GET",
           cache: "no-store",
         });
-
-        if (response.status === 409) {
-          const problem = await response.json();
-          if (problem.error === "NO_DOCUMENT_OPEN") {
-            setStatus("Buch auf dem Reader öffnen");
-            scheduleConnectionCheck(3000);
-            return;
-          }
-        }
 
         if (!response.ok) {
           throw new Error("HTTP " + response.status);
         }
 
-        failedPings = 0;
         setStatus("Verbunden");
-        scheduleConnectionCheck(15000);
-
         if (navigator.vibrate) {
           navigator.vibrate(15);
         }
       } catch (error) {
         console.error("KOReader Remote request failed:", error);
-        setStatus("Verbinde neu …");
-        scheduleConnectionCheck(2000);
+        setStatus("Keine Verbindung");
       } finally {
         requestRunning = false;
       }
     }
 
-    function previousPage() { request("/api/previous", "Zurück"); }
-    function nextPage() { request("/api/next", "Weiter"); }
+    function previousPage() {
+      request("/api/previous", "Zurück");
+    }
+
+    function nextPage() {
+      request("/api/next", "Weiter");
+    }
 
     document.getElementById("previous")
       .addEventListener("click", previousPage);
@@ -202,14 +142,16 @@
       }
     });
 
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
-        checkConnection();
-      }
-    });
+    fetch("/api/ping", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
 
-    window.addEventListener("online", checkConnection);
-    checkConnection();
+        const info = await response.json();
+        setStatus("Verbunden · v" + info.version);
+      })
+      .catch(() => setStatus("Keine Verbindung"));
   </script>
 </body>
 </html>
