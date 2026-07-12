@@ -72,7 +72,8 @@
     }
 
     button,
-    summary {
+    #device-controls > summary,
+    .bookmark-menu > summary {
       -webkit-tap-highlight-color: transparent;
     }
 
@@ -175,7 +176,7 @@
       overflow: hidden;
     }
 
-    summary {
+    #device-controls > summary {
       position: sticky;
       z-index: 2;
       top: 0;
@@ -188,17 +189,11 @@
       list-style: none;
     }
 
-    summary::-webkit-details-marker {
+    #device-controls > summary::-webkit-details-marker {
       display: none;
     }
 
-    summary::before {
-      content: "⚙";
-      margin-right: 0.65rem;
-      font-size: 1.05rem;
-    }
-
-    summary::after {
+    #device-controls > summary::after {
       content: "⌃";
       float: right;
       color: var(--muted);
@@ -206,7 +201,7 @@
       transform: translateY(0.05rem);
     }
 
-    #device-controls:not([open]) summary::after {
+    #device-controls:not([open]) > summary::after {
       content: "⌄";
     }
 
@@ -762,6 +757,12 @@
       display: none;
     }
 
+    .bookmark-menu > summary::before,
+    .bookmark-menu > summary::after {
+      display: none !important;
+      content: none !important;
+    }
+
     .bookmark-menu-dot {
       display: block;
       width: 0.38rem;
@@ -915,7 +916,7 @@
     }
 
     button:focus-visible,
-    summary:focus-visible {
+    #device-controls > summary:focus-visible {
       outline: 3px solid #d8dce4;
       outline-offset: -3px;
     }
@@ -947,7 +948,7 @@
         margin-bottom: 0.42rem;
       }
 
-      summary {
+      #device-controls > summary {
         min-height: 2.9rem;
         padding-top: 0.75rem;
         padding-bottom: 0.75rem;

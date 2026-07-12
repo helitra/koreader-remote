@@ -167,6 +167,17 @@ jobs:
           grep -Fq 'className = "bookmark-menu-panel"' "${INDEX}"
           grep -Fq 'className = "bookmark-menu-dot"' "${INDEX}"
           grep -Fq 'index < 3' "${INDEX}"
+          grep -Fq '#device-controls > summary {' "${INDEX}"
+          grep -Fq '.bookmark-menu > summary::before' "${INDEX}"
+          grep -Fq 'content: none !important' "${INDEX}"
+          if grep -Fq 'content: "⚙"' "${INDEX}"; then
+            echo "Gear icon must not be present in the web UI."
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*summary(::|[[:space:]]*\{)' "${INDEX}"; then
+            echo "Unscoped summary CSS can leak into the annotation menu."
+            exit 1
+          fi
           grep -Fq 'aria-expanded' "${INDEX}"
           grep -Fq 'background: transparent' "${INDEX}"
           grep -Fq 'border: 0' "${INDEX}"
@@ -208,6 +219,7 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           files = [
               Path("koreaderremote.koplugin/main.lua"),
@@ -315,6 +327,9 @@ jobs:
               'className = "bookmark-menu-panel"',
               'className = "bookmark-menu-dot"',
               'index < 3',
+              '#device-controls > summary {',
+              '.bookmark-menu > summary::before',
+              'content: none !important',
               'aria-expanded',
               'background: transparent',
               'border: 0',
@@ -349,6 +364,16 @@ jobs:
           if "bookmark-card-actions" in index:
               raise SystemExit(
                   "Large bookmark action rows are not allowed."
+              )
+
+          if 'content: "⚙"' in index:
+              raise SystemExit(
+                  "The gear icon must not be present in the web UI."
+              )
+
+          if re.search(r"^\s*summary(?:::|\s*\{)", index, re.MULTILINE):
+              raise SystemExit(
+                  "Unscoped summary CSS can leak into annotation menus."
               )
 
           if "summary.textContent" in index:

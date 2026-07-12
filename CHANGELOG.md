@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.8.9
+
+### Fixed
+
+- Removed the gear icon from the web interface.
+- Fixed the Device settings `summary::before` rule leaking into annotation overflow menus.
+- Replaced every unscoped `<summary>` style with a selector limited to Device settings or the bookmark menu.
+- Scoped Device settings layout, arrow, focus, tap-highlight, and compact-height rules to `#device-controls > summary`.
+- Added a defensive rule preventing pseudo-elements from appearing before or after the annotation three-dot trigger.
+- The annotation trigger now renders only its three CSS dots, with no gear, border, background, arrow, or focus box.
+
+### Compatibility
+
+- The in-card **Edit Note**, **Delete Note**, and **Delete Bookmark** menu is unchanged.
+- Bookmark navigation, return-to-reading-position, search, sorting, note synchronization, footnote automation, OLED mode, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart remain unchanged.
+
 ## v0.8.8
 
 ### Fixed
