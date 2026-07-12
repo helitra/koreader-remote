@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.8.0
+
+### Added
+
+- Added a pencil icon that opens a dedicated phone note editor without changing the main page-turn layout.
+- Added **Write note on phone** to KOReader's selected-text highlight actions.
+- Added **Edit note on phone** for existing highlights and notes through the highlight action menu.
+- Added explicit **Pull from Kindle** and **Push to Kindle** note actions.
+- Added note-session revision checks to prevent silent overwrites after a note changes on the reader.
+- Added one active, document-bound note session with a 30-minute expiry and a 12 KiB note limit.
+- Added automatic note-session cancellation when the document closes or changes.
+- Added a `¹` toolbar action that opens the next current-page link accepted by KOReader's footnote-popup detection.
+- Added an optional OLED mode with true-black backgrounds, darker static elements, browser-local persistence, and inactivity dimming.
+- Added Home Screen status-bar metadata for a darker Safari standalone experience.
+- Added `GET /api/v1/note-session`, `POST /api/v1/note-session/push`, `POST /api/v1/note-session/cancel`, and `POST /api/v1/footnote/open`.
+- Added `interaction.lua` to isolate note and footnote integration from the HTTP server lifecycle.
+
+### Changed
+
+- The capabilities response now reports `remote_notes` and `footnotes` support for the current KOReader view.
+- The updater now requires `interaction.lua` in future installed releases.
+- The top status area now contains compact footnote, note, and OLED controls while the large lower page-turn zones remain unchanged.
+
+### Security and limits
+
+- Remote-note text is Base64-encoded UTF-8 in a bounded request header because KOReader's simple TCP HTTP server does not consume request bodies.
+- A remote note can be pushed only while a user-created note session is active on the reader.
+- The existing trusted-local-network warning still applies; there is no authentication token.
+- Footnote automation is experimental and limited to reflowable documents supported by KOReader's current footnote-popup detection.
+
 ## v0.7.1
 
 ### Changed

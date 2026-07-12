@@ -40,6 +40,10 @@ The whole project was mostly vibe-coded — okay, basically all of it. It starte
 ### Remote reading
 
 - Turn one page forward or backward
+- Open the next detected footnote on the current EPUB page
+- Write and edit selected-text notes from the phone
+- Pull an existing KOReader note into the phone editor and push changes back
+- Use an optional pure-black OLED mode with inactivity dimming
 - Use two large, thumb-friendly page controls
 - Use the left and right arrow keys with a keyboard
 - Keep the same browser page after a normal reconnect
@@ -72,6 +76,53 @@ Controls appear only when KOReader reports that the current device supports them
 - Automatic browser reconnect when the reader becomes reachable again
 - URL and QR payload change only after a real IP or port change
 - Compact connection diagnostics inside KOReader
+
+## ✍️ Notes from the phone
+
+The note editor stays behind the small pencil icon in the phone toolbar.
+
+To create a note:
+
+```text
+Select text on the reader
+→ Write note on phone
+→ open the pencil icon on the phone
+→ write the note
+→ Push to Kindle
+```
+
+To edit an existing note or highlight, open its highlight menu and choose:
+
+```text
+Edit note on phone
+```
+
+The phone editor provides two explicit actions:
+
+- **Pull from Kindle** replaces the editor with the current KOReader note.
+- **Push to Kindle** writes the editor contents back to the selected annotation.
+
+A revision check prevents a phone edit from silently overwriting a note that changed on the reader after it was pulled. Only one note session can be active at a time, and it expires after 30 minutes.
+
+The regular KOReader note editor remains available. KOReader Remote adds a separate action rather than replacing the built-in workflow.
+
+## ¹ Footnote automation
+
+The `¹` toolbar button asks KOReader to open the next link on the current page that passes KOReader's own footnote-popup detection.
+
+This feature is intended for reflowable documents such as EPUB. Footnote detection depends on how the publisher built the book, so some books may have no detectable footnote, incomplete footnote content, or links that are not recognized as footnotes.
+
+## 🌑 OLED mode
+
+The `◐` toolbar button enables an optional OLED-oriented display mode:
+
+- pure black page and panel backgrounds
+- darker borders and controls
+- reduced static brightness
+- automatic dimming after 30 seconds without interaction
+- the preference is stored only in the current browser
+
+OLED mode reduces persistent bright pixels, but it cannot guarantee that display burn-in will never occur. Safari's browser chrome remains partly controlled by iOS unless the page is opened as a Home Screen web app.
 
 ## 📱 Phone layout
 
@@ -246,7 +297,18 @@ GET /api/previous
 ```http
 GET /api/v1/capabilities
 GET /api/v1/device-state
+GET /api/v1/note-session
 ```
+
+### Reading and note actions
+
+```http
+POST /api/v1/footnote/open
+POST /api/v1/note-session/push
+POST /api/v1/note-session/cancel
+```
+
+The note push endpoint uses bounded Base64-encoded UTF-8 text in request headers because KOReader's bundled simple HTTP server reads request headers but does not read an HTTP request body.
 
 ### Device actions
 
@@ -291,7 +353,7 @@ A checksum downloaded from the same GitHub release detects damaged or mismatched
 
 - Use KOReader Remote only on a trusted local network.
 - This version does not use authentication or an access token.
-- Anyone who can reach the reader IP and port can use the available controls.
+- Anyone who can reach the reader IP and port can use the available controls and can submit text to an active remote-note session.
 - Guest networks may block local device-to-device traffic.
 - A sleeping reader cannot be woken through the remote server.
 - Keeping Wi-Fi active may increase battery use.

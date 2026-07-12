@@ -48,6 +48,7 @@ local MAX_SINGLE_FILE_BYTES = 5 * 1024 * 1024
 local REQUIRED_FILES = {
     "_meta.lua",
     "devicecontrols.lua",
+    "interaction.lua",
     "main.lua",
     "updater.lua",
     "web/index.html",

@@ -39,6 +39,7 @@ jobs:
           PLUGIN="koreaderremote.koplugin"
           MAIN="${PLUGIN}/main.lua"
           CONTROLS="${PLUGIN}/devicecontrols.lua"
+          INTERACTION="${PLUGIN}/interaction.lua"
           UPDATER="${PLUGIN}/updater.lua"
           INDEX="${PLUGIN}/web/index.html"
           LUAC="$(command -v luac5.1 || command -v luac)"
@@ -54,6 +55,7 @@ jobs:
           test -f "${PLUGIN}/_meta.lua"
           test -f "${MAIN}"
           test -f "${CONTROLS}"
+          test -f "${INTERACTION}"
           test -f "${UPDATER}"
           test -f "${INDEX}"
 
@@ -64,6 +66,7 @@ jobs:
           "${LUAC}" -p "${PLUGIN}/_meta.lua"
           "${LUAC}" -p "${MAIN}"
           "${LUAC}" -p "${CONTROLS}"
+          "${LUAC}" -p "${INTERACTION}"
           "${LUAC}" -p "${UPDATER}"
 
           grep -Fq "local VERSION = \"${VERSION}\"" "${MAIN}"
@@ -78,6 +81,9 @@ jobs:
           grep -Fq '/api/v1/warmth' "${MAIN}"
           grep -Fq '/api/v1/night-mode' "${MAIN}"
           grep -Fq '/api/v1/full-refresh' "${MAIN}"
+          grep -Fq '/api/v1/note-session' "${MAIN}"
+          grep -Fq '/api/v1/note-session/push' "${MAIN}"
+          grep -Fq '/api/v1/footnote/open' "${MAIN}"
           grep -Fq '<html lang="en">' "${INDEX}"
           grep -Fq '<details id="device-controls" hidden>' "${INDEX}"
           grep -Fq '<summary>Device settings</summary>' "${INDEX}"
@@ -105,6 +111,21 @@ jobs:
           grep -Fq 'function Updater:isRestartRequired()' "${UPDATER}"
           grep -Fq 'currentProcessId()' "${UPDATER}"
           grep -Fq 'runtime.update_restart_required' "${MAIN}"
+          grep -Fq 'local Interaction = dofile(PLUGIN_DIR .. "/interaction.lua")' "${MAIN}"
+          grep -Fq 'Write note on phone' "${INTERACTION}"
+          grep -Fq 'Edit note on phone' "${INTERACTION}"
+          grep -Fq 'function Interaction:openNextFootnote()' "${INTERACTION}"
+          grep -Fq 'showAsFootnotePopup' "${INTERACTION}"
+          grep -Fq 'MAX_NOTE_BYTES = 12 * 1024' "${INTERACTION}"
+          grep -Fq 'id="note-button"' "${INDEX}"
+          grep -Fq 'id="footnote-button"' "${INDEX}"
+          grep -Fq 'id="oled-button"' "${INDEX}"
+          grep -Fq 'id="note-view"' "${INDEX}"
+          grep -Fq 'Pull from Kindle' "${INDEX}"
+          grep -Fq 'Push to Kindle' "${INDEX}"
+          grep -Fq ':root[data-oled="true"]' "${INDEX}"
+          grep -Fq 'const OLED_IDLE_MS = 30000;' "${INDEX}"
+          grep -Fq 'X-KOReader-Note-Base64' "${INDEX}"
 
           if grep -Fq 'type="range"' "${INDEX}"; then
             echo "The website must not contain sliders."
@@ -117,6 +138,7 @@ jobs:
           files = [
               Path("koreaderremote.koplugin/main.lua"),
               Path("koreaderremote.koplugin/devicecontrols.lua"),
+              Path("koreaderremote.koplugin/interaction.lua"),
               Path("koreaderremote.koplugin/updater.lua"),
               Path("koreaderremote.koplugin/web/index.html"),
               Path("README.md"),
@@ -200,6 +222,27 @@ jobs:
           if "applyDeviceState(payload.state, name)" not in index:
               raise SystemExit(
                   "Confirmed control responses are not handled."
+              )
+
+          required_v080 = [
+              'id="note-button"',
+              'id="footnote-button"',
+              'id="oled-button"',
+              'id="note-view"',
+              'Pull from Kindle',
+              'Push to Kindle',
+              ':root[data-oled="true"]',
+              'const OLED_IDLE_MS = 30000;',
+              'X-KOReader-Note-Base64',
+          ]
+
+          missing_v080 = [
+              marker for marker in required_v080 if marker not in index
+          ]
+          if missing_v080:
+              raise SystemExit(
+                  "Missing v0.8.0 UI markers: "
+                  + ", ".join(missing_v080)
               )
           PY
 

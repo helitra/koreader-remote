@@ -1,4 +1,4 @@
--- KOReader Remote v0.7.1
+-- KOReader Remote v0.8.0
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,7 +11,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.7.1"
+local VERSION = "0.8.0"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
@@ -19,6 +19,7 @@ local AUTOSTART_SETTINGS_KEY = "koreaderremote_autostart"
 local PLUGIN_DIR = DataStorage:getDataDir() .. "/plugins/koreaderremote.koplugin"
 local INDEX_FILE = PLUGIN_DIR .. "/web/index.html"
 local DeviceControls = dofile(PLUGIN_DIR .. "/devicecontrols.lua")
+local Interaction = dofile(PLUGIN_DIR .. "/interaction.lua")
 local Updater = dofile(PLUGIN_DIR .. "/updater.lua")
 
 local STATE_STOPPED = "stopped"
@@ -38,6 +39,7 @@ local HTTP_STATUS = {
     [204] = "No Content",
     [400] = "Bad Request",
     [409] = "Conflict",
+    [413] = "Payload Too Large",
     [404] = "Not Found",
     [405] = "Method Not Allowed",
     [500] = "Internal Server Error",
@@ -203,6 +205,19 @@ local function parseRequestURI(raw_uri)
     return path or raw_uri, params
 end
 
+local function parseHeaders(data)
+    local headers = {}
+
+    for line in tostring(data or ""):gmatch("[^\r\n]+") do
+        local name, value = line:match("^([^:]+):%s*(.*)$")
+        if name then
+            headers[name:lower()] = value
+        end
+    end
+
+    return headers
+end
+
 local function parseBoolean(value)
     if value == true
         or value == "true"
@@ -236,6 +251,26 @@ function Remote:init()
             end,
         }
     end
+
+    if not runtime.interaction then
+        runtime.interaction = Interaction:new{
+            get_owner = function()
+                return runtime.owner
+            end,
+            ensure_server = function()
+                local owner = runtime.owner
+                if owner and not owner:isRunning() then
+                    owner:requestStart(false, "manual")
+                end
+            end,
+        }
+    end
+
+    UIManager:nextTick(function()
+        if runtime.interaction then
+            runtime.interaction:attachUI(self.ui)
+        end
+    end)
 
     self.updater = Updater:new{
         installed_version = VERSION,
@@ -1050,6 +1085,9 @@ function Remote:restoreAfterPluginUpdateFailure(snapshot)
 end
 
 function Remote:shutdownRuntime()
+    if runtime.interaction then
+        runtime.interaction:cancelNoteSession("KOReader exit")
+    end
     self:stop(true, false)
     runtime.user_stopped = false
     runtime.document_open = false
@@ -1057,6 +1095,12 @@ function Remote:shutdownRuntime()
 end
 
 -- KOReader lifecycle events --------------------------------------------------
+
+function Remote:onReaderReady()
+    if runtime.interaction then
+        runtime.interaction:attachUI(self.ui)
+    end
+end
 
 function Remote:onNetworkConnecting()
     if runtime.sleeping then
@@ -1135,6 +1179,9 @@ end
 function Remote:onCloseWidget()
     -- Closing a book or switching to FileManagerUI is not the same as exiting
     -- KOReader. The shared runtime keeps the server alive across that switch.
+    if runtime.interaction then
+        runtime.interaction:onUIClosed(self.ui)
+    end
     runtime.document_open = false
     logger.dbg("KOReaderRemote: UI closed; preserving remote session")
 end
@@ -1241,6 +1288,7 @@ function Remote:onRequest(data, request_id)
     end
 
     local uri, params = parseRequestURI(raw_uri)
+    local headers = parseHeaders(data)
     logger.dbg("KOReaderRemote:", method, uri)
 
     if method ~= "GET" and method ~= "POST" then
@@ -1304,6 +1352,9 @@ function Remote:onRequest(data, request_id)
             url = runtime.connection_url,
             url_revision = runtime.connection_revision,
             manual_sleep_grace_seconds = MANUAL_SLEEP_GRACE_SECONDS,
+            note_session_active = runtime.interaction
+                and runtime.interaction:getNoteSessionState().active
+                or false,
         })
     end
 
@@ -1349,10 +1400,20 @@ function Remote:onRequest(data, request_id)
             )
         end
 
+        local capabilities = {}
+        for name, supported in pairs(controls:getCapabilities()) do
+            capabilities[name] = supported
+        end
+        for name, supported in pairs(
+            runtime.interaction:getCapabilities()
+        ) do
+            capabilities[name] = supported
+        end
+
         return self:sendJSON(request_id, 200, {
             ok = true,
             version = VERSION,
-            capabilities = controls:getCapabilities(),
+            capabilities = capabilities,
         })
     end
 
@@ -1371,6 +1432,119 @@ function Remote:onRequest(data, request_id)
             version = VERSION,
             state = controls:getState(),
         })
+    end
+
+    if uri == "/api/v1/note-session" then
+        if method ~= "GET" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use GET for this endpoint."
+            )
+        end
+
+        return self:sendJSON(request_id, 200, {
+            ok = true,
+            session = runtime.interaction:getNoteSessionState(),
+        })
+    end
+
+    if uri == "/api/v1/note-session/push" then
+        if method ~= "POST" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use POST for this endpoint."
+            )
+        end
+
+        local ok, result, message, session =
+            runtime.interaction:pushEncodedNote(
+                headers["x-koreader-note-base64"],
+                headers["x-koreader-note-revision"]
+            )
+
+        if not ok then
+            local status = 400
+            if result == "NOTE_CONFLICT"
+                or result == "NO_NOTE_SESSION"
+                or result == "NOTE_SESSION_EXPIRED" then
+                status = 409
+            elseif result == "NOTE_TOO_LARGE" then
+                status = 413
+            end
+
+            return self:sendJSON(request_id, status, {
+                ok = false,
+                error = result,
+                message = message,
+                session = session,
+            })
+        end
+
+        return self:sendJSON(
+            request_id,
+            200,
+            {
+                ok = true,
+                action = "note_saved",
+                session = result,
+            },
+            true
+        )
+    end
+
+    if uri == "/api/v1/note-session/cancel" then
+        if method ~= "POST" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use POST for this endpoint."
+            )
+        end
+
+        runtime.interaction:cancelNoteSession("cancelled from phone")
+        return self:sendJSON(request_id, 200, {
+            ok = true,
+            action = "note_session_cancelled",
+        })
+    end
+
+    if uri == "/api/v1/footnote/open" then
+        if method ~= "POST" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use POST for this endpoint."
+            )
+        end
+
+        local ok, result, message =
+            runtime.interaction:openNextFootnote()
+
+        if not ok then
+            local status = result == "NOT_SUPPORTED" and 501 or 404
+            return self:sendControlError(
+                request_id,
+                status,
+                result,
+                message
+            )
+        end
+
+        return self:sendJSON(
+            request_id,
+            200,
+            {
+                ok = true,
+                action = result.action,
+            },
+            true
+        )
     end
 
     if uri:match("^/api/v1/") then
