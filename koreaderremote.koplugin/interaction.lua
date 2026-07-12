@@ -5,6 +5,7 @@
 
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
+local InputDialog = require("ui/widget/inputdialog")
 local Notification = require("ui/widget/notification")
 local UIManager = require("ui/uimanager")
 local logger = require("logger")
@@ -180,13 +181,17 @@ function Interaction:startNewNoteSession(highlight)
                 return false
             end
 
-            return self:startNoteSession(highlight, saved_index)
+            return self:startNoteSession(
+                highlight,
+                saved_index,
+                true
+            )
         end)
     end
 
     -- Older and development KOReader builds may still expose the optional
-    -- highlight prompt callback. KOReader 2026.03 saves highlights directly
-    -- and no longer exposes that method, so support both interfaces.
+    -- highlight prompt callback. KOReader 2026.03 saves highlights directly,
+    -- so support both interfaces.
     if type(highlight.showHighlightPrompt) == "function" then
         highlight:showHighlightPrompt(function(saved_index)
             startSavedNote(saved_index)
@@ -232,8 +237,11 @@ function Interaction:attachUI(ui)
                 callback = function()
                     bridge:runNoteAction(function()
                         if index then
-                            local started =
-                                bridge:startNoteSession(highlight, index)
+                            local started = bridge:startNoteSession(
+                                highlight,
+                                index,
+                                false
+                            )
 
                             if started
                                 and type(highlight.onClose) == "function" then
@@ -266,25 +274,193 @@ function Interaction:findAnnotationIndex(ui, annotation)
     end
 end
 
-function Interaction:cancelNoteSession(reason)
-    if self.session then
-        logger.info(
-            "KOReaderRemote: closing note session",
-            self.session.id,
-            reason or "cancelled"
-        )
+function Interaction:refreshSessionDraft(session_id)
+    local session = self.session
+
+    if not session or (session_id and session.id ~= session_id) then
+        return nil, "NO_NOTE_SESSION", "No note is selected on the reader."
     end
 
+    local dialog = session.input_dialog
+    if not dialog or type(dialog.getInputText) ~= "function" then
+        return nil,
+            "NOTE_DIALOG_CLOSED",
+            "The Kindle note editor is no longer open."
+    end
+
+    local ok, draft = pcall(dialog.getInputText, dialog)
+    if not ok then
+        return nil,
+            "NOTE_DIALOG_CLOSED",
+            "The Kindle note editor could not be read."
+    end
+
+    draft = tostring(draft or "")
+
+    if draft ~= session.last_draft then
+        session.last_draft = draft
+        session.revision = session.revision + 1
+        session.updated_at = os.time()
+        session.expires_at = session.updated_at + NOTE_SESSION_TTL_SECONDS
+    end
+
+    return session
+end
+
+function Interaction:closeNoteDialog(session)
+    local dialog = session and session.input_dialog
+    if not dialog then
+        return
+    end
+
+    session.input_dialog = nil
+
+    local ok, err = pcall(function()
+        UIManager:close(dialog, "flashui")
+    end)
+
+    if not ok then
+        logger.warn(
+            "KOReaderRemote: could not close remote note dialog:",
+            err
+        )
+    end
+end
+
+function Interaction:discardNewHighlight(session)
+    if not session or not session.is_new_note or session.saved then
+        return
+    end
+
+    local index = self:findAnnotationIndex(session.ui, session.annotation)
+    if not index then
+        return
+    end
+
+    local bookmark = session.ui and session.ui.bookmark
+    if bookmark and type(bookmark.removeItemByIndex) == "function" then
+        bookmark:removeItemByIndex(index)
+    end
+end
+
+function Interaction:cancelNoteSession(reason, close_dialog, discard_new)
+    local session = self.session
+    if not session then
+        return false
+    end
+
+    logger.info(
+        "KOReaderRemote: closing note session",
+        session.id,
+        reason or "cancelled"
+    )
+
     self.session = nil
+
+    if close_dialog then
+        self:closeNoteDialog(session)
+    end
+
+    if discard_new then
+        self:discardNewHighlight(session)
+    end
+
+    self.last_note_result = {
+        result = "cancelled",
+        at = os.time(),
+    }
+
+    return true
 end
 
 function Interaction:onUIClosed(ui)
     if self.session and self.session.ui == ui then
-        self:cancelNoteSession("document closed")
+        self:cancelNoteSession(
+            "document closed",
+            false,
+            true
+        )
     end
 end
 
-function Interaction:startNoteSession(highlight, index)
+function Interaction:openNoteDialog(session)
+    local bridge = self
+    local session_id = session.id
+    local input_dialog
+
+    input_dialog = InputDialog:new{
+        title = _("Remote note"),
+        description = _(
+            "Type here or continue in KOReader Remote on your phone."
+        ),
+        input = session.last_draft,
+        allow_newline = true,
+        add_scroll_buttons = true,
+        use_available_height = true,
+        edited_callback = function()
+            bridge:refreshSessionDraft(session_id)
+        end,
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function()
+                        bridge:runNoteAction(function()
+                            bridge:cancelNoteSession(
+                                "cancelled on Kindle",
+                                true,
+                                true
+                            )
+                            return true
+                        end)
+                    end,
+                },
+                {
+                    text = _("Paste"),
+                    callback = function()
+                        input_dialog:addTextToInput(
+                            session.annotation.text or ""
+                        )
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    is_enter_default = true,
+                    callback = function()
+                        bridge:runNoteAction(function()
+                            local ok, result, message =
+                                bridge:saveNoteSession(
+                                    nil,
+                                    session_id,
+                                    "kindle"
+                                )
+
+                            if not ok then
+                                UIManager:show(InfoMessage:new{
+                                    text = message
+                                        or _("The note could not be saved."),
+                                })
+                            end
+
+                            return ok
+                        end)
+                    end,
+                },
+            },
+        },
+    }
+
+    session.input_dialog = input_dialog
+    UIManager:show(input_dialog)
+    input_dialog:onShowKeyboard()
+end
+
+function Interaction:startNoteSession(highlight, index, is_new_note)
+    if self.session then
+        self:cancelNoteSession("replaced", true, true)
+    end
+
     local ui = highlight and highlight.ui
     local annotations = ui
         and ui.annotation
@@ -301,6 +477,7 @@ function Interaction:startNoteSession(highlight, index)
     session_counter = session_counter + 1
     local now = os.time()
 
+    self.last_note_result = nil
     self.session = {
         id = string.format("%x-%x", now, session_counter),
         ui = ui,
@@ -311,7 +488,12 @@ function Interaction:startNoteSession(highlight, index)
         updated_at = now,
         expires_at = now + NOTE_SESSION_TTL_SECONDS,
         revision = 1,
-        last_note = annotation.note or "",
+        last_draft = annotation.note or "",
+        saved_note = annotation.note or "",
+        saved_note_present = annotation.note ~= nil,
+        type_before = annotationType(ui, annotation),
+        is_new_note = is_new_note == true,
+        saved = false,
     }
 
     if self.ensure_server then
@@ -324,13 +506,7 @@ function Interaction:startNoteSession(highlight, index)
         end
     end
 
-    UIManager:show(InfoMessage:new{
-        text = _(
-            "Remote note is ready.\n\n"
-            .. "Open KOReader Remote on your phone and tap the note icon."
-        ),
-    })
-
+    self:openNoteDialog(self.session)
     return true
 end
 
@@ -341,7 +517,7 @@ function Interaction:resolveSession()
     end
 
     if os.time() > session.expires_at then
-        self:cancelNoteSession("expired")
+        self:cancelNoteSession("expired", true, true)
         return nil, "NOTE_SESSION_EXPIRED", "The note session expired."
     end
 
@@ -350,21 +526,33 @@ function Interaction:resolveSession()
         or ui ~= session.ui
         or not ui.document
         or ui.document.file ~= session.document_file then
-        self:cancelNoteSession("document changed")
-        return nil, "NO_NOTE_SESSION", "The selected document is no longer open."
+        self:cancelNoteSession("document changed", false, true)
+        return nil,
+            "NO_NOTE_SESSION",
+            "The selected document is no longer open."
     end
 
     local index = self:findAnnotationIndex(ui, session.annotation)
     if not index then
-        self:cancelNoteSession("annotation removed")
+        self:cancelNoteSession("annotation removed", true, false)
         return nil, "NO_NOTE_SESSION", "The selected note no longer exists."
     end
 
     session.index = index
 
-    local current_note = session.annotation.note or ""
-    if current_note ~= session.last_note then
-        session.last_note = current_note
+    local refreshed, code, message = self:refreshSessionDraft(session.id)
+    if not refreshed then
+        self:cancelNoteSession("dialog closed", false, true)
+        return nil, code, message
+    end
+
+    local current_saved_note = session.annotation.note or ""
+    local current_saved_present = session.annotation.note ~= nil
+
+    if current_saved_note ~= session.saved_note
+        or current_saved_present ~= session.saved_note_present then
+        session.saved_note = current_saved_note
+        session.saved_note_present = current_saved_present
         session.revision = session.revision + 1
         session.updated_at = os.time()
     end
@@ -373,9 +561,15 @@ function Interaction:resolveSession()
 end
 
 function Interaction:sessionState(session)
-    session = session or self:resolveSession()
+    if not session then
+        local result = self.last_note_result
+        if result and os.time() - result.at <= 30 then
+            return {
+                active = false,
+                result = result.result,
+            }
+        end
 
-    if type(session) ~= "table" then
         return {
             active = false,
         }
@@ -385,9 +579,14 @@ function Interaction:sessionState(session)
         active = true,
         id = session.id,
         excerpt = utf8Prefix(session.annotation.text or "", 2200),
-        note = session.annotation.note or "",
+        note = session.last_draft,
+        draft = session.last_draft,
+        saved_note = session.saved_note,
         revision = session.revision,
-        has_note = session.annotation.note ~= nil,
+        has_note = session.last_draft ~= "",
+        has_saved_note = session.saved_note_present,
+        dirty = session.last_draft ~= session.saved_note
+            or (session.last_draft == "" and session.saved_note_present),
         expires_in = math.max(0, session.expires_at - os.time()),
     }
 end
@@ -397,26 +596,22 @@ function Interaction:getNoteSessionState()
     return self:sessionState(session)
 end
 
-function Interaction:pushEncodedNote(encoded, expected_revision)
+function Interaction:decodeAndValidateNote(encoded)
     if type(encoded) ~= "string" then
-        return false,
-            "MISSING_NOTE",
-            "The note header is missing."
+        return nil, "MISSING_NOTE", "The note header is missing."
     end
 
     if #encoded > math.ceil(MAX_NOTE_BYTES / 3) * 4 + 8 then
-        return false,
-            "NOTE_TOO_LARGE",
-            "The note is too large."
+        return nil, "NOTE_TOO_LARGE", "The note is too large."
     end
 
     local note, decode_err = decodeBase64(encoded)
     if not note then
-        return false, "INVALID_NOTE", decode_err
+        return nil, "INVALID_NOTE", decode_err
     end
 
     if #note > MAX_NOTE_BYTES then
-        return false,
+        return nil,
             "NOTE_TOO_LARGE",
             string.format(
                 "Notes are limited to %d bytes.",
@@ -425,9 +620,20 @@ function Interaction:pushEncodedNote(encoded, expected_revision)
     end
 
     if note:find("%z") then
-        return false,
+        return nil,
             "INVALID_NOTE",
             "The note must not contain NUL characters."
+    end
+
+    return note
+end
+
+function Interaction:pushEncodedNote(encoded, expected_revision)
+    local note, decode_code, decode_message =
+        self:decodeAndValidateNote(encoded)
+
+    if note == nil then
+        return false, decode_code, decode_message
     end
 
     local session, code, message = self:resolveSession()
@@ -440,14 +646,39 @@ function Interaction:pushEncodedNote(encoded, expected_revision)
         or expected_revision ~= session.revision then
         return false,
             "NOTE_CONFLICT",
-            "The note changed on the reader. Pull the latest version first.",
+            "The Kindle draft changed. Pull the latest version first.",
             self:sessionState(session)
     end
 
+    local dialog = session.input_dialog
+    local ok, set_err = pcall(
+        dialog.setInputText,
+        dialog,
+        note,
+        true,
+        false
+    )
+
+    if not ok then
+        return false,
+            "NOTE_DIALOG_CLOSED",
+            "The Kindle note editor could not be updated: "
+                .. tostring(set_err)
+    end
+
+    session.last_draft = note
+    session.revision = session.revision + 1
+    session.updated_at = os.time()
+    session.expires_at = session.updated_at + NOTE_SESSION_TTL_SECONDS
+
+    return true, self:sessionState(session)
+end
+
+function Interaction:commitNoteSession(session, source)
     local ui = session.ui
     local annotation = session.annotation
-    local type_before = annotationType(ui, annotation)
-    local value = note ~= "" and note or nil
+    local value = session.last_draft ~= "" and session.last_draft or nil
+    local type_before = session.type_before
 
     session.highlight:writePdfAnnotation(
         "content",
@@ -480,16 +711,59 @@ function Interaction:pushEncodedNote(encoded, expected_revision)
         UIManager:setDirty(session.highlight.dialog, "ui")
     end
 
-    session.last_note = value or ""
-    session.revision = session.revision + 1
-    session.updated_at = os.time()
-    session.expires_at = session.updated_at + NOTE_SESSION_TTL_SECONDS
+    session.saved = true
+    session.saved_note = value or ""
+    session.saved_note_present = value ~= nil
+    self.session = nil
+    self.last_note_result = {
+        result = "saved",
+        at = os.time(),
+    }
+
+    self:closeNoteDialog(session)
 
     UIManager:show(Notification:new{
-        text = _("Note saved from phone."),
+        text = source == "phone"
+            and _("Note saved from phone.")
+            or _("Note saved."),
     })
 
-    return true, self:sessionState(session)
+    return {
+        active = false,
+        result = "saved",
+    }
+end
+
+function Interaction:saveNoteSession(
+    expected_revision,
+    session_id,
+    source
+)
+    local session, code, message = self:resolveSession()
+    if not session then
+        return false, code, message
+    end
+
+    if session_id and session.id ~= session_id then
+        return false,
+            "NOTE_CONFLICT",
+            "A different note is now open on the reader.",
+            self:sessionState(session)
+    end
+
+    if expected_revision ~= nil then
+        expected_revision = tonumber(expected_revision)
+
+        if not expected_revision
+            or expected_revision ~= session.revision then
+            return false,
+                "NOTE_CONFLICT",
+                "The Kindle draft changed. Pull the latest version first.",
+                self:sessionState(session)
+        end
+    end
+
+    return true, self:commitNoteSession(session, source)
 end
 
 function Interaction:getFootnotePageKey(ui)

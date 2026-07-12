@@ -77,18 +77,17 @@ Controls appear only when KOReader reports that the current device supports them
 - URL and QR payload change only after a real IP or port change
 - Compact connection diagnostics inside KOReader
 
-## ✍️ Notes from the phone
+## ✍️ Notes on Kindle and phone
 
-The note editor stays behind the small pencil icon in the phone toolbar.
+The phone editor stays behind the small pencil icon in the toolbar.
 
 To create a note:
 
 ```text
 Select text on the reader
 → Write note on phone
-→ open the pencil icon on the phone
-→ write the note
-→ Push to Kindle
+→ the Kindle note dialog opens
+→ type on Kindle, on the phone, or switch between both
 ```
 
 To edit an existing note or highlight, open its highlight menu and choose:
@@ -97,14 +96,16 @@ To edit an existing note or highlight, open its highlight menu and choose:
 Edit note on phone
 ```
 
-The phone editor provides two explicit actions:
+The Kindle dialog stays open during the remote-note session. Text that has not been saved yet can move in either direction:
 
-- **Pull from Kindle** replaces the editor with the current KOReader note.
-- **Push to Kindle** writes the editor contents back to the selected annotation.
+- **Pull from Kindle** loads the current open Kindle draft into the phone editor.
+- **Push to Kindle** places the phone text into the open Kindle dialog without saving it.
+- **Save note** stores the current draft permanently in KOReader and closes the Kindle dialog.
+- The normal **Save** button on the Kindle dialog stores the same shared draft.
 
-A revision check prevents a phone edit from silently overwriting a note that changed on the reader after it was pulled. Only one note session can be active at a time, and it expires after 30 minutes.
+This makes it possible to begin a note with the Kindle keyboard, continue it on the phone, push it back for review, and then save from either device.
 
-The regular KOReader note editor remains available. KOReader Remote adds a separate action rather than replacing the built-in workflow.
+A revision check prevents one device from silently overwriting a draft that changed on the other device. Only one note session can be active at a time, and it expires after 30 minutes. Cancelling a newly created remote note removes the temporary highlight, matching KOReader's regular new-note behavior.
 
 ## ¹ Footnote automation
 
@@ -305,10 +306,11 @@ GET /api/v1/note-session
 ```http
 POST /api/v1/footnote/open
 POST /api/v1/note-session/push
+POST /api/v1/note-session/save
 POST /api/v1/note-session/cancel
 ```
 
-The note push endpoint uses bounded Base64-encoded UTF-8 text in request headers because KOReader's bundled simple HTTP server reads request headers but does not read an HTTP request body.
+The note push endpoint uses bounded Base64-encoded UTF-8 text in request headers because KOReader's bundled simple HTTP server reads request headers but does not read an HTTP request body. Pushing updates only the open Kindle draft; the separate save endpoint commits that draft to the annotation.
 
 ### Device actions
 

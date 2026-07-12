@@ -582,6 +582,17 @@
       background: var(--panel-soft);
     }
 
+    .note-help {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    #note-save {
+      grid-column: 1 / -1;
+    }
+
     button:focus-visible,
     summary:focus-visible {
       outline: 3px solid #d8dce4;
@@ -765,8 +776,8 @@
 
     <div id="note-content">
       <div id="note-empty">
-        <strong>No note selected</strong>
-        <p>
+        <strong id="note-empty-title">No note selected</strong>
+        <p id="note-empty-text">
           Select text or an existing highlight on your reader, then choose
           <strong>Write note on phone</strong> or
           <strong>Edit note on phone</strong>.
@@ -783,12 +794,20 @@
 
         <div id="note-message" role="status" data-error="false"></div>
 
+        <p class="note-help">
+          Push updates the open Kindle draft without saving it. Save note
+          stores the current draft permanently in KOReader.
+        </p>
+
         <div class="note-actions">
           <button class="note-action-button" id="note-pull" type="button">
             ↓ Pull from Kindle
           </button>
-          <button class="note-action-button primary" id="note-push" type="button">
+          <button class="note-action-button" id="note-push" type="button">
             ↑ Push to Kindle
+          </button>
+          <button class="note-action-button primary" id="note-save" type="button">
+            Save note
           </button>
         </div>
       </div>
@@ -830,12 +849,15 @@
     const noteView = document.getElementById("note-view");
     const noteBack = document.getElementById("note-back");
     const noteEmpty = document.getElementById("note-empty");
+    const noteEmptyTitle = document.getElementById("note-empty-title");
+    const noteEmptyText = document.getElementById("note-empty-text");
     const noteEditorPanel = document.getElementById("note-editor-panel");
     const noteExcerpt = document.getElementById("note-excerpt");
     const noteText = document.getElementById("note-text");
     const noteMessage = document.getElementById("note-message");
     const notePull = document.getElementById("note-pull");
     const notePush = document.getElementById("note-push");
+    const noteSave = document.getElementById("note-save");
     const frontlightRow = document.getElementById("frontlight-row");
     const brightnessRow = document.getElementById("brightness-row");
     const warmthRow = document.getElementById("warmth-row");
@@ -1021,22 +1043,41 @@
 
       if (!noteSession) {
         noteLoadedRevision = null;
+        noteText.dataset.sessionId = "";
+
+        if (session && session.result === "saved") {
+          noteEmptyTitle.textContent = "Note saved";
+          noteEmptyText.textContent = "The note was saved in KOReader.";
+        } else if (session && session.result === "cancelled") {
+          noteEmptyTitle.textContent = "Note cancelled";
+          noteEmptyText.textContent = "The open Kindle draft was discarded.";
+        } else {
+          noteEmptyTitle.textContent = "No note selected";
+          noteEmptyText.innerHTML =
+            "Select text or an existing highlight on your reader, then choose "
+            + "<strong>Write note on phone</strong> or "
+            + "<strong>Edit note on phone</strong>.";
+        }
+
         setNoteMessage("");
         return;
       }
 
+      noteEmptyTitle.textContent = "No note selected";
       noteExcerpt.textContent = noteSession.excerpt || "";
 
       const sessionChanged = noteText.dataset.sessionId !== noteSession.id;
       if (replaceEditor || sessionChanged || !noteEditorDirty) {
-        noteText.value = noteSession.note || "";
+        noteText.value = noteSession.draft ?? noteSession.note ?? "";
         noteText.dataset.sessionId = noteSession.id;
         noteLoadedRevision = noteSession.revision;
         noteEditorDirty = false;
         setNoteMessage(
-          noteSession.has_note
-            ? "Note pulled from Kindle"
-            : "Ready for a new note"
+          noteSession.dirty
+            ? "Unsaved draft pulled from Kindle"
+            : noteSession.has_saved_note
+              ? "Saved note pulled from Kindle"
+              : "Ready for a new note"
         );
       }
     }
@@ -1093,13 +1134,15 @@
       }
     }
 
-    async function pushNote() {
+    async function pushNote(silent = false) {
       if (!noteSession || noteLoadedRevision === null) {
         setNoteMessage("Pull a selected note from Kindle first", true);
-        return;
+        return null;
       }
 
-      setNoteMessage("Pushing to Kindle…");
+      if (!silent) {
+        setNoteMessage("Pushing draft to Kindle…");
+      }
 
       try {
         const payload = await postJSON(
@@ -1111,11 +1154,63 @@
         );
 
         renderNoteSession(payload.session, true);
-        setNoteMessage("Saved on Kindle");
-        setStatus("Note saved", true);
+        setNoteMessage("Draft sent to Kindle. Save it on either device.");
+        setStatus("Kindle draft updated", true);
+
+        if (navigator.vibrate && !silent) {
+          navigator.vibrate(20);
+        }
+
+        return payload.session;
+      } catch (error) {
+        const code = error.payload && error.payload.error;
+
+        if (code === "NOTE_CONFLICT") {
+          if (error.payload.session) {
+            noteSession = error.payload.session;
+          }
+          setNoteMessage(
+            "The Kindle draft changed. Pull the latest version before pushing.",
+            true
+          );
+        } else if (code === "NOTE_TOO_LARGE") {
+          setNoteMessage(error.message || "The note is too large", true);
+        } else {
+          setNoteMessage(error.message || "Could not update the Kindle draft", true);
+        }
+
+        return null;
+      }
+    }
+
+    async function saveNote() {
+      if (!noteSession || noteLoadedRevision === null) {
+        setNoteMessage("Pull a selected note from Kindle first", true);
+        return;
+      }
+
+      if (noteEditorDirty) {
+        const pushed = await pushNote(true);
+        if (!pushed) {
+          return;
+        }
+      }
+
+      setNoteMessage("Saving note…");
+
+      try {
+        const payload = await postJSON(
+          "/api/v1/note-session/save",
+          {
+            "X-KOReader-Note-Revision": String(noteLoadedRevision),
+          }
+        );
+
+        renderNoteSession(payload.session, true);
+        setStatus("Note saved on Kindle", true);
 
         if (navigator.vibrate) {
-          navigator.vibrate(20);
+          navigator.vibrate([20, 30, 20]);
         }
       } catch (error) {
         const code = error.payload && error.payload.error;
@@ -1125,11 +1220,9 @@
             noteSession = error.payload.session;
           }
           setNoteMessage(
-            "The note changed on Kindle. Pull the latest version before pushing.",
+            "The Kindle draft changed. Pull it again before saving.",
             true
           );
-        } else if (code === "NOTE_TOO_LARGE") {
-          setNoteMessage(error.message || "The note is too large", true);
         } else {
           setNoteMessage(error.message || "Could not save the note", true);
         }
@@ -1585,7 +1678,8 @@
     noteButton.addEventListener("click", openNoteView);
     noteBack.addEventListener("click", closeNoteView);
     notePull.addEventListener("click", pullNote);
-    notePush.addEventListener("click", pushNote);
+    notePush.addEventListener("click", () => pushNote(false));
+    noteSave.addEventListener("click", saveNote);
     oledButton.addEventListener("click", () => {
       applyOledMode(
         document.documentElement.dataset.oled !== "true"
@@ -1594,7 +1688,7 @@
 
     noteText.addEventListener("input", () => {
       noteEditorDirty = true;
-      setNoteMessage("Not pushed yet");
+      setNoteMessage("Not pushed to Kindle yet");
     });
 
     document.addEventListener("pointerdown", resetOledIdleTimer, {

@@ -83,6 +83,7 @@ jobs:
           grep -Fq '/api/v1/full-refresh' "${MAIN}"
           grep -Fq '/api/v1/note-session' "${MAIN}"
           grep -Fq '/api/v1/note-session/push' "${MAIN}"
+          grep -Fq '/api/v1/note-session/save' "${MAIN}"
           grep -Fq '/api/v1/footnote/open' "${MAIN}"
           grep -Fq '<html lang="en">' "${INDEX}"
           grep -Fq '<details id="device-controls" hidden>' "${INDEX}"
@@ -121,6 +122,10 @@ jobs:
           grep -Fq 'type(highlight.showHighlightPrompt) == "function"' "${INTERACTION}"
           grep -Fq 'highlight:saveHighlight(true)' "${INTERACTION}"
           grep -Fq 'xpcall(callback, debug.traceback)' "${INTERACTION}"
+          grep -Fq 'local InputDialog = require("ui/widget/inputdialog")' "${INTERACTION}"
+          grep -Fq 'function Interaction:openNoteDialog(session)' "${INTERACTION}"
+          grep -Fq 'dialog.setInputText' "${INTERACTION}"
+          grep -Fq 'function Interaction:saveNoteSession(' "${INTERACTION}"
           grep -Fq 'if encoded == "" then' "${INTERACTION}"
           grep -Fq 'padding ~= "=" and padding ~= "=="' "${INTERACTION}"
           grep -Fq 'local expected_bytes = (#encoded / 4) * 3 - padding_count' "${INTERACTION}"
@@ -134,6 +139,8 @@ jobs:
           grep -Fq 'id="note-view"' "${INDEX}"
           grep -Fq 'Pull from Kindle' "${INDEX}"
           grep -Fq 'Push to Kindle' "${INDEX}"
+          grep -Fq 'Save note' "${INDEX}"
+          grep -Fq '/api/v1/note-session/save' "${INDEX}"
           grep -Fq ':root[data-oled="true"]' "${INDEX}"
           grep -Fq 'const OLED_IDLE_MS = 30000;' "${INDEX}"
           grep -Fq 'X-KOReader-Note-Base64' "${INDEX}"
@@ -242,6 +249,8 @@ jobs:
               'id="note-view"',
               'Pull from Kindle',
               'Push to Kindle',
+              'Save note',
+              '/api/v1/note-session/save',
               ':root[data-oled="true"]',
               'const OLED_IDLE_MS = 30000;',
               'X-KOReader-Note-Base64',

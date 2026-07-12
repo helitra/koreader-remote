@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.8.3
+
+### Added
+
+- Added a native Kindle note dialog for **Write note on phone** and **Edit note on phone** sessions.
+- Added live access to the current unsaved Kindle note draft through **Pull from Kindle**.
+- Added draft-only **Push to Kindle** behavior: phone text now fills the open Kindle note field without saving the annotation.
+- Added a separate **Save note** button on the phone.
+- Added `/api/v1/note-session/save` for explicitly committing the shared draft.
+- Added feedback when a note is saved or cancelled on either device.
+
+### Changed
+
+- A remote-note session can now be edited on Kindle and phone interchangeably before it is saved.
+- The Kindle **Save** button and the phone **Save note** button commit the same shared draft.
+- Cancelling a new remote note discards its temporary highlight, matching KOReader's native new-note workflow.
+- Draft revisions now change when the open Kindle text field changes, preventing silent cross-device overwrites.
+
+### Compatibility
+
+- Base64 transport, OLED mode, footnote automation, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart remain unchanged.
+
 ## v0.8.2
 
 ### Fixed

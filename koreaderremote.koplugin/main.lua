@@ -1,4 +1,4 @@
--- KOReader Remote v0.8.2
+-- KOReader Remote v0.8.3
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,7 +11,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.8.2"
+local VERSION = "0.8.3"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
@@ -1489,6 +1489,52 @@ function Remote:onRequest(data, request_id)
             200,
             {
                 ok = true,
+                action = "note_draft_updated",
+                session = result,
+            },
+            true
+        )
+    end
+
+    if uri == "/api/v1/note-session/save" then
+        if method ~= "POST" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use POST for this endpoint."
+            )
+        end
+
+        local ok, result, message, session =
+            runtime.interaction:saveNoteSession(
+                headers["x-koreader-note-revision"],
+                nil,
+                "phone"
+            )
+
+        if not ok then
+            local status = 400
+            if result == "NOTE_CONFLICT"
+                or result == "NO_NOTE_SESSION"
+                or result == "NOTE_SESSION_EXPIRED"
+                or result == "NOTE_DIALOG_CLOSED" then
+                status = 409
+            end
+
+            return self:sendJSON(request_id, status, {
+                ok = false,
+                error = result,
+                message = message,
+                session = session,
+            })
+        end
+
+        return self:sendJSON(
+            request_id,
+            200,
+            {
+                ok = true,
                 action = "note_saved",
                 session = result,
             },
@@ -1506,7 +1552,11 @@ function Remote:onRequest(data, request_id)
             )
         end
 
-        runtime.interaction:cancelNoteSession("cancelled from phone")
+        runtime.interaction:cancelNoteSession(
+            "cancelled from phone",
+            true,
+            true
+        )
         return self:sendJSON(request_id, 200, {
             ok = true,
             action = "note_session_cancelled",
