@@ -76,9 +76,21 @@ jobs:
           grep -Fq '/api/v1/night-mode' "${MAIN}"
           grep -Fq '/api/v1/full-refresh' "${MAIN}"
           grep -Fq '<html lang="en">' "${INDEX}"
+          grep -Fq '<details id="device-controls" open hidden>' "${INDEX}"
           grep -Fq '<summary>Device settings</summary>' "${INDEX}"
           grep -Fq 'aria-label="Previous page"' "${INDEX}"
           grep -Fq 'aria-label="Next page"' "${INDEX}"
+          grep -Fq 'data-control="brightness" data-value="1"' "${INDEX}"
+          grep -Fq 'data-control="brightness" data-value="100"' "${INDEX}"
+          grep -Fq 'data-control="warmth" data-value="0"' "${INDEX}"
+          grep -Fq 'data-control="warmth" data-value="100"' "${INDEX}"
+          grep -Fq 'const HOLD_DELAY_MS = 500;' "${INDEX}"
+          grep -Fq '{ until: Infinity, interval: 230 }' "${INDEX}"
+
+          if grep -Fq 'type="range"' "${INDEX}"; then
+            echo "The v0.6.2 website must not contain sliders."
+            exit 1
+          fi
 
           python3 - <<'PY'
           from pathlib import Path
@@ -128,6 +140,32 @@ jobs:
               raise SystemExit("Remote layout elements are missing.")
           if settings_position > remote_position:
               raise SystemExit("Device settings must appear above page controls.")
+
+          required_presets = {
+              "brightness": ["1", "10", "25", "50", "75", "100"],
+              "warmth": ["0", "25", "50", "75", "100"],
+          }
+
+          for control, values in required_presets.items():
+              for value in values:
+                  marker = (
+                      f'data-control="{control}" data-value="{value}"'
+                  )
+                  if marker not in index:
+                      raise SystemExit(
+                          f"Missing {control} preset {value}%."
+                      )
+
+          if 'type="range"' in index:
+              raise SystemExit("Sliders are not allowed in v0.6.2.")
+
+          if "const HOLD_DELAY_MS = 500;" not in index:
+              raise SystemExit("The hold delay must remain 500 ms.")
+
+          if "{ until: Infinity, interval: 230 }" not in index:
+              raise SystemExit(
+                  "The capped human repeat interval is missing."
+              )
           PY
 
       - name: Build release files and notes

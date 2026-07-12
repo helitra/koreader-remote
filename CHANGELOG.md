@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.6.2
+
+### Changed
+
+- Replaced the brightness and warmth sliders with large preset buttons and fine-adjustment controls.
+- Added brightness presets for 1%, 10%, 25%, 50%, 75%, and 100%.
+- Added warmth presets for 0%, 25%, 50%, 75%, and 100%.
+- A normal minus or plus tap changes the value by exactly one percentage point.
+- Holding minus or plus starts repeating after 500 milliseconds.
+- Hold acceleration changes only the repeat timing; every individual step remains exactly one percentage point.
+- Limited the fastest hold rate to approximately 4.3 steps per second.
+- Guaranteed a final device update when the user releases or leaves a fine-adjustment button.
+- Made Device settings open on a first visit while retaining the user's later collapsed or expanded preference.
+- Matched the approved dark Safari-oriented layout with status, device controls, and large lower page-turn zones.
+
+### Compatibility
+
+- No server, API, pairing, lifecycle, autostart, sleep, or QR-code behavior changed.
+- Existing device-control endpoints remain unchanged.
+- All v0.6.1 English-language and thumb-friendly page-turn behavior remains available.
+
 ## v0.6.1
 
 ### Changed
