@@ -84,6 +84,8 @@ jobs:
           grep -Fq '/api/v1/note-session' "${MAIN}"
           grep -Fq '/api/v1/note-session/push' "${MAIN}"
           grep -Fq '/api/v1/note-session/save' "${MAIN}"
+          grep -Fq '/api/v1/bookmarks' "${MAIN}"
+          grep -Fq '/api/v1/bookmarks/open' "${MAIN}"
           grep -Fq '/api/v1/footnote/open' "${MAIN}"
           grep -Fq '<html lang="en">' "${INDEX}"
           grep -Fq '<details id="device-controls" hidden>' "${INDEX}"
@@ -115,6 +117,11 @@ jobs:
           grep -Fq 'local Interaction = dofile(PLUGIN_DIR .. "/interaction.lua")' "${MAIN}"
           grep -Fq 'Write note on phone' "${INTERACTION}"
           grep -Fq 'Edit note on phone' "${INTERACTION}"
+          grep -Fq 'function Interaction:getBookmarks()' "${INTERACTION}"
+          grep -Fq 'function Interaction:openBookmark(id)' "${INTERACTION}"
+          grep -Fq 'MAX_BOOKMARK_ITEMS = 300' "${INTERACTION}"
+          grep -Fq 'ui.bookmark.gotoBookmark' "${INTERACTION}"
+          grep -Fq 'ui.link.addCurrentLocationToStack' "${INTERACTION}"
           grep -Fq 'function Interaction:openNextFootnote()' "${INTERACTION}"
           grep -Fq 'showAsFootnotePopup' "${INTERACTION}"
           grep -Fq 'MAX_NOTE_BYTES = 12 * 1024' "${INTERACTION}"
@@ -133,6 +140,11 @@ jobs:
             echo "Unsupported regex-style Base64 quantifier found."
             exit 1
           fi
+          grep -Fq 'id="bookmark-button"' "${INDEX}"
+          grep -Fq 'id="bookmark-view"' "${INDEX}"
+          grep -Fq 'data-bookmark-filter="note"' "${INDEX}"
+          grep -Fq '/api/v1/bookmarks/open?id=' "${INDEX}"
+          grep -Fq 'Open on Kindle' "${INDEX}"
           grep -Fq 'id="note-button"' "${INDEX}"
           grep -Fq 'id="footnote-button"' "${INDEX}"
           grep -Fq 'id="oled-button"' "${INDEX}"
@@ -243,6 +255,11 @@ jobs:
               )
 
           required_v080 = [
+              'id="bookmark-button"',
+              'id="bookmark-view"',
+              'data-bookmark-filter="note"',
+              '/api/v1/bookmarks/open?id=',
+              'Open on Kindle',
               'id="note-button"',
               'id="footnote-button"',
               'id="oled-button"',

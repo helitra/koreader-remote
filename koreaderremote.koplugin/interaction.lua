@@ -16,6 +16,9 @@ local Interaction = {}
 Interaction.__index = Interaction
 
 local MAX_NOTE_BYTES = 12 * 1024
+local MAX_BOOKMARK_ITEMS = 300
+local MAX_BOOKMARK_EXCERPT_BYTES = 1200
+local MAX_BOOKMARK_NOTE_BYTES = 3000
 local NOTE_SESSION_TTL_SECONDS = 30 * 60
 local HIGHLIGHT_ACTION_ID = "04a_koreader_remote_note"
 local session_counter = 0
@@ -57,6 +60,31 @@ local function annotationType(ui, annotation)
     end
 
     return "bookmark"
+end
+
+local function basename(path)
+    return tostring(path or ""):match("([^/]+)$") or tostring(path or "")
+end
+
+local function annotationIdentity(index, ui, annotation)
+    local source = table.concat({
+        tostring(index),
+        tostring(annotation.datetime or ""),
+        tostring(annotation.datetime_updated or ""),
+        tostring(annotation.page or ""),
+        tostring(annotation.pos0 or ""),
+        tostring(annotation.pos1 or ""),
+        annotationType(ui, annotation),
+    }, "\0")
+
+    -- This token only detects that the list changed between loading and
+    -- tapping an item; it is not an authentication token.
+    local hash = 5381
+    for position = 1, #source do
+        hash = (hash * 33 + source:byte(position)) % 4294967296
+    end
+
+    return string.format("%d-%08x", index, hash)
 end
 
 local function decodeBase64(encoded)
@@ -139,6 +167,7 @@ function Interaction:getCapabilities()
 
     return {
         remote_notes = notes,
+        bookmarks = notes,
         footnotes = footnotes,
     }
 end
@@ -764,6 +793,173 @@ function Interaction:saveNoteSession(
     end
 
     return true, self:commitNoteSession(session, source)
+end
+
+
+function Interaction:getBookTitle(ui)
+    if ui and ui.doc_props and ui.doc_props.display_title then
+        return tostring(ui.doc_props.display_title)
+    end
+
+    return basename(ui and ui.document and ui.document.file)
+end
+
+function Interaction:getBookmarkPageLabel(ui, annotation)
+    if annotation.pageref ~= nil and annotation.pageref ~= "" then
+        return tostring(annotation.pageref)
+    end
+
+    if annotation.pageno ~= nil and annotation.pageno ~= "" then
+        return tostring(annotation.pageno)
+    end
+
+    if ui.bookmark
+        and type(ui.bookmark.getBookmarkPageString) == "function" then
+        local ok, page = pcall(
+            ui.bookmark.getBookmarkPageString,
+            ui.bookmark,
+            annotation.page
+        )
+
+        if ok and page ~= nil then
+            return tostring(page)
+        end
+    end
+
+    return tostring(annotation.page or "")
+end
+
+function Interaction:getBookmarks()
+    local ui = self:getUI()
+
+    if not ui
+        or not ui.document
+        or not ui.annotation
+        or type(ui.annotation.annotations) ~= "table"
+        or not ui.bookmark then
+        return false,
+            "NO_DOCUMENT_OPEN",
+            "Open a book on the reader first."
+    end
+
+    local annotations = ui.annotation.annotations
+    local items = {}
+    local counts = {
+        all = #annotations,
+        bookmark = 0,
+        highlight = 0,
+        note = 0,
+    }
+
+    for index, annotation in ipairs(annotations) do
+        local item_type = annotationType(ui, annotation)
+        counts[item_type] = (counts[item_type] or 0) + 1
+
+        if #items < MAX_BOOKMARK_ITEMS then
+            items[#items + 1] = {
+                id = annotationIdentity(index, ui, annotation),
+                type = item_type,
+                page = self:getBookmarkPageLabel(ui, annotation),
+                chapter = utf8Prefix(
+                    annotation.chapter or "",
+                    400
+                ),
+                excerpt = utf8Prefix(
+                    annotation.text or "",
+                    MAX_BOOKMARK_EXCERPT_BYTES
+                ),
+                note = utf8Prefix(
+                    annotation.note or "",
+                    MAX_BOOKMARK_NOTE_BYTES
+                ),
+                datetime = tostring(annotation.datetime or ""),
+                datetime_updated = tostring(
+                    annotation.datetime_updated or ""
+                ),
+            }
+        end
+    end
+
+    return true, {
+        title = self:getBookTitle(ui),
+        count = #annotations,
+        returned = #items,
+        truncated = #annotations > #items,
+        counts = counts,
+        items = items,
+    }
+end
+
+function Interaction:openBookmark(id)
+    if type(id) ~= "string" or id == "" then
+        return false,
+            "MISSING_BOOKMARK",
+            "The bookmark identifier is missing."
+    end
+
+    local ui = self:getUI()
+
+    if not ui
+        or not ui.document
+        or not ui.annotation
+        or type(ui.annotation.annotations) ~= "table"
+        or not ui.bookmark
+        or type(ui.bookmark.gotoBookmark) ~= "function" then
+        return false,
+            "NO_DOCUMENT_OPEN",
+            "Open a book on the reader first."
+    end
+
+    local selected
+    local selected_type
+
+    for index, annotation in ipairs(ui.annotation.annotations) do
+        if annotationIdentity(index, ui, annotation) == id then
+            selected = annotation
+            selected_type = annotationType(ui, annotation)
+            break
+        end
+    end
+
+    if not selected then
+        return false,
+            "BOOKMARK_CHANGED",
+            "The bookmark list changed. Refresh it and try again."
+    end
+
+    if ui.link and type(ui.link.addCurrentLocationToStack) == "function" then
+        local stack_ok, stack_err = pcall(
+            ui.link.addCurrentLocationToStack,
+            ui.link
+        )
+
+        if not stack_ok then
+            logger.warn(
+                "KOReaderRemote: could not add bookmark origin to history:",
+                stack_err
+            )
+        end
+    end
+
+    local ok, err = pcall(
+        ui.bookmark.gotoBookmark,
+        ui.bookmark,
+        selected.page,
+        selected.pos0
+    )
+
+    if not ok then
+        logger.err("KOReaderRemote: bookmark navigation failed:", err)
+        return false,
+            "BOOKMARK_OPEN_FAILED",
+            "KOReader could not open the selected bookmark."
+    end
+
+    return true, {
+        action = "bookmark_opened",
+        type = selected_type,
+        page = self:getBookmarkPageLabel(ui, selected),
+    }
 end
 
 function Interaction:getFootnotePageKey(ui)

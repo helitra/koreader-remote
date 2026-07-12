@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.8.4
+
+### Added
+
+- Added a dedicated `🔖` phone tab for annotations from the currently open book.
+- Added a combined list of page bookmarks, highlights, and notes.
+- Added **All**, **Bookmarks**, **Highlights**, and **Notes** filters.
+- Added chapter, page or position, selected-text excerpt, and attached-note display.
+- Added tap-to-open navigation from the phone to the selected Kindle annotation.
+- Added `GET /api/v1/bookmarks`.
+- Added `POST /api/v1/bookmarks/open?id=...`.
+- Added stale-list detection so a changed annotation list is refreshed instead of opening the wrong entry.
+- Added a 300-item response limit and bounded text fields for predictable local-network payloads.
+
+### Changed
+
+- Opening an annotation from the phone adds the current Kindle location to KOReader's navigation history before jumping.
+- OLED inactivity dimming now remains disabled while either the note editor or bookmarks tab is open.
+
+### Compatibility
+
+- Annotation editing and deletion are intentionally not part of this release.
+- Remote notes, footnote automation, OLED mode, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart remain unchanged.
+
 ## v0.8.3
 
 ### Added

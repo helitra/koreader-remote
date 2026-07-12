@@ -433,7 +433,8 @@
       opacity: 0.16;
     }
 
-    #note-view {
+    #note-view,
+    #bookmark-view {
       display: flex;
       width: 100%;
       min-height: 100svh;
@@ -445,18 +446,22 @@
     }
 
     @supports (height: 100dvh) {
-      #note-view {
+      #note-view,
+      #bookmark-view {
         min-height: 100dvh;
         height: 100dvh;
       }
     }
 
     body.note-open #top,
-    body.note-open #remote {
+    body.note-open #remote,
+    body.bookmark-open #top,
+    body.bookmark-open #remote {
       display: none;
     }
 
-    .note-header {
+    .note-header,
+    .bookmark-header {
       display: grid;
       grid-template-columns: 3rem 1fr 3rem;
       align-items: center;
@@ -465,13 +470,15 @@
       border-bottom: 1px solid var(--border);
     }
 
-    .note-header h1 {
+    .note-header h1,
+    .bookmark-header h1 {
       margin: 0;
       text-align: center;
       font-size: 1.08rem;
     }
 
-    .note-header .icon-button {
+    .note-header .icon-button,
+    .bookmark-header .icon-button {
       width: 2.7rem;
       height: 2.7rem;
     }
@@ -593,6 +600,179 @@
       grid-column: 1 / -1;
     }
 
+
+    #bookmark-content {
+      min-height: 0;
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding: 0.9rem 0.8rem max(1rem, env(safe-area-inset-bottom));
+      overscroll-behavior: contain;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    #bookmark-shell {
+      width: min(100%, 52rem);
+      margin: 0 auto;
+    }
+
+    #bookmark-title {
+      margin: 0 0 0.65rem;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #bookmark-filters {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.42rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .bookmark-filter {
+      min-height: 2.55rem;
+      border: 1px solid var(--border);
+      border-radius: 0.62rem;
+      background: var(--button);
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .bookmark-filter[aria-pressed="true"] {
+      background: var(--panel-soft);
+      box-shadow: inset 0 0 0 1px #686f7b;
+    }
+
+    #bookmark-message {
+      min-height: 1.2rem;
+      margin-bottom: 0.65rem;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    #bookmark-message[data-error="true"] {
+      color: var(--danger);
+    }
+
+    #bookmark-list {
+      display: grid;
+      gap: 0.68rem;
+    }
+
+    .bookmark-card {
+      display: block;
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 0.78rem;
+      padding: 0.85rem;
+      background: var(--panel);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .bookmark-card:active {
+      background: var(--panel-soft);
+    }
+
+    .bookmark-card-top {
+      display: flex;
+      gap: 0.55rem;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.58rem;
+    }
+
+    .bookmark-type {
+      display: inline-flex;
+      min-height: 1.65rem;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.2rem 0.55rem;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .bookmark-location {
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bookmark-chapter {
+      margin: 0 0 0.48rem;
+      font-size: 0.95rem;
+      font-weight: 750;
+      line-height: 1.35;
+    }
+
+    .bookmark-excerpt {
+      display: -webkit-box;
+      margin: 0;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 0.91rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 5;
+    }
+
+    .bookmark-note {
+      margin-top: 0.68rem;
+      border-left: 3px solid var(--border);
+      padding: 0.58rem 0.68rem;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.42;
+      white-space: pre-wrap;
+    }
+
+    .bookmark-note::before {
+      content: "Note";
+      display: block;
+      margin-bottom: 0.28rem;
+      color: var(--text);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .bookmark-open-label {
+      display: block;
+      margin-top: 0.7rem;
+      color: var(--success);
+      font-size: 0.8rem;
+      font-weight: 750;
+    }
+
+    #bookmark-empty {
+      border: 1px solid var(--border);
+      border-radius: 0.8rem;
+      padding: 1.2rem;
+      background: var(--panel);
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 390px) {
+      #bookmark-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
     button:focus-visible,
     summary:focus-visible {
       outline: 3px solid #d8dce4;
@@ -674,6 +854,8 @@
       <div id="toolbar-actions" aria-label="Remote tools">
         <button class="icon-button" id="footnote-button" type="button"
                 aria-label="Open next footnote" title="Open next footnote" hidden>¹</button>
+        <button class="icon-button" id="bookmark-button" type="button"
+                aria-label="Open bookmarks" title="Open bookmarks" hidden>🔖</button>
         <button class="icon-button" id="note-button" type="button"
                 aria-label="Open note editor" title="Open note editor"
                 data-active="false">✎</button>
@@ -814,6 +996,41 @@
     </div>
   </section>
 
+
+  <section id="bookmark-view" aria-label="Current book bookmarks" hidden>
+    <header class="bookmark-header">
+      <button class="icon-button" id="bookmark-back" type="button"
+              aria-label="Back to remote">←</button>
+      <h1>Bookmarks</h1>
+      <button class="icon-button" id="bookmark-refresh" type="button"
+              aria-label="Refresh bookmarks" title="Refresh bookmarks">↻</button>
+    </header>
+
+    <div id="bookmark-content">
+      <div id="bookmark-shell">
+        <p id="bookmark-title">Current book</p>
+
+        <div id="bookmark-filters" aria-label="Bookmark filters">
+          <button class="bookmark-filter" type="button"
+                  data-bookmark-filter="all" aria-pressed="true">All</button>
+          <button class="bookmark-filter" type="button"
+                  data-bookmark-filter="bookmark" aria-pressed="false">Bookmarks</button>
+          <button class="bookmark-filter" type="button"
+                  data-bookmark-filter="highlight" aria-pressed="false">Highlights</button>
+          <button class="bookmark-filter" type="button"
+                  data-bookmark-filter="note" aria-pressed="false">Notes</button>
+        </div>
+
+        <div id="bookmark-message" role="status" data-error="false"></div>
+        <div id="bookmark-list"></div>
+        <div id="bookmark-empty" hidden>
+          No matching bookmarks, highlights, or notes were found in the
+          currently open book.
+        </div>
+      </div>
+    </div>
+  </section>
+
   <main id="remote" aria-label="KOReader page-turn remote">
     <button class="page-button" id="previous" type="button"
             aria-label="Previous page">
@@ -844,6 +1061,7 @@
     const themeColorElement = document.querySelector('meta[name="theme-color"]');
     const deviceControlsElement = document.getElementById("device-controls");
     const footnoteButton = document.getElementById("footnote-button");
+    const bookmarkButton = document.getElementById("bookmark-button");
     const noteButton = document.getElementById("note-button");
     const oledButton = document.getElementById("oled-button");
     const noteView = document.getElementById("note-view");
@@ -858,6 +1076,16 @@
     const notePull = document.getElementById("note-pull");
     const notePush = document.getElementById("note-push");
     const noteSave = document.getElementById("note-save");
+    const bookmarkView = document.getElementById("bookmark-view");
+    const bookmarkBack = document.getElementById("bookmark-back");
+    const bookmarkRefresh = document.getElementById("bookmark-refresh");
+    const bookmarkTitle = document.getElementById("bookmark-title");
+    const bookmarkMessage = document.getElementById("bookmark-message");
+    const bookmarkList = document.getElementById("bookmark-list");
+    const bookmarkEmpty = document.getElementById("bookmark-empty");
+    const bookmarkFilters = Array.from(
+      document.querySelectorAll("[data-bookmark-filter]")
+    );
     const frontlightRow = document.getElementById("frontlight-row");
     const brightnessRow = document.getElementById("brightness-row");
     const warmthRow = document.getElementById("warmth-row");
@@ -905,6 +1133,9 @@
     let noteLoadedRevision = null;
     let noteEditorDirty = false;
     let notePollTimer = null;
+    let bookmarkBook = null;
+    let bookmarkFilter = "all";
+    let bookmarkRequestRunning = false;
     let oledIdleTimer = null;
 
     function clamp(value, minimum, maximum) {
@@ -1005,7 +1236,10 @@
 
       if (document.documentElement.dataset.oled === "true") {
         oledIdleTimer = window.setTimeout(() => {
-          if (!document.body.classList.contains("note-open")) {
+          if (
+            !document.body.classList.contains("note-open")
+            && !document.body.classList.contains("bookmark-open")
+          ) {
             document.body.classList.add("oled-idle");
           }
         }, OLED_IDLE_MS);
@@ -1250,6 +1484,199 @@
       scheduleConnectionCheck(5000);
     }
 
+
+    function setBookmarkMessage(text, error = false) {
+      bookmarkMessage.textContent = text;
+      bookmarkMessage.dataset.error = error ? "true" : "false";
+    }
+
+    function bookmarkTypeLabel(type) {
+      if (type === "note") {
+        return "Note";
+      }
+      if (type === "highlight") {
+        return "Highlight";
+      }
+      return "Bookmark";
+    }
+
+    function createBookmarkCard(item) {
+      const card = document.createElement("button");
+      card.className = "bookmark-card";
+      card.type = "button";
+      card.dataset.bookmarkType = item.type || "bookmark";
+
+      const top = document.createElement("span");
+      top.className = "bookmark-card-top";
+
+      const type = document.createElement("span");
+      type.className = "bookmark-type";
+      type.textContent = bookmarkTypeLabel(item.type);
+
+      const location = document.createElement("span");
+      location.className = "bookmark-location";
+      location.textContent = item.page ? "Page " + item.page : "Book position";
+
+      top.append(type, location);
+      card.append(top);
+
+      if (item.chapter) {
+        const chapter = document.createElement("p");
+        chapter.className = "bookmark-chapter";
+        chapter.textContent = item.chapter;
+        card.append(chapter);
+      }
+
+      if (item.excerpt) {
+        const excerpt = document.createElement("p");
+        excerpt.className = "bookmark-excerpt";
+        excerpt.textContent = item.excerpt;
+        card.append(excerpt);
+      }
+
+      if (item.note) {
+        const note = document.createElement("div");
+        note.className = "bookmark-note";
+        note.textContent = item.note;
+        card.append(note);
+      }
+
+      const openLabel = document.createElement("span");
+      openLabel.className = "bookmark-open-label";
+      openLabel.textContent = "Open on Kindle →";
+      card.append(openLabel);
+
+      card.addEventListener("click", () => openBookmarkOnKindle(item));
+      return card;
+    }
+
+    function renderBookmarks(book) {
+      bookmarkBook = book || null;
+      bookmarkList.replaceChildren();
+
+      const title = book && book.title ? book.title : "Current book";
+      bookmarkTitle.textContent = title;
+
+      const items = book && Array.isArray(book.items) ? book.items : [];
+      const visibleItems = bookmarkFilter === "all"
+        ? items
+        : items.filter((item) => item.type === bookmarkFilter);
+
+      visibleItems.forEach((item) => {
+        bookmarkList.append(createBookmarkCard(item));
+      });
+
+      bookmarkEmpty.hidden = visibleItems.length !== 0;
+
+      const shown = visibleItems.length;
+      const total = book ? Number(book.count || 0) : 0;
+      let message = shown + (shown === 1 ? " item" : " items");
+
+      if (bookmarkFilter !== "all") {
+        message += " in this filter";
+      } else if (total !== shown) {
+        message += " shown";
+      }
+
+      if (book && book.truncated) {
+        message += " · list limited to " + String(book.returned || shown);
+      }
+
+      setBookmarkMessage(message);
+    }
+
+    async function loadBookmarks() {
+      if (bookmarkRequestRunning) {
+        return;
+      }
+
+      bookmarkRequestRunning = true;
+      setBookmarkMessage("Loading bookmarks…");
+
+      try {
+        const payload = await getJSON("/api/v1/bookmarks");
+        renderBookmarks(payload.book);
+      } catch (error) {
+        bookmarkBook = null;
+        bookmarkList.replaceChildren();
+        bookmarkEmpty.hidden = false;
+
+        const code = error.payload && error.payload.error;
+        if (code === "NO_DOCUMENT_OPEN") {
+          bookmarkTitle.textContent = "No book open";
+          setBookmarkMessage("Open a book on the reader first", true);
+        } else {
+          setBookmarkMessage(
+            error.message || "Could not load bookmarks",
+            true
+          );
+        }
+      } finally {
+        bookmarkRequestRunning = false;
+      }
+    }
+
+    async function openBookmarkOnKindle(item) {
+      setBookmarkMessage("Opening on Kindle…");
+
+      try {
+        const payload = await postJSON(
+          "/api/v1/bookmarks/open?id=" + encodeURIComponent(item.id)
+        );
+
+        const location = payload.page ? " · page " + payload.page : "";
+        setBookmarkMessage(
+          bookmarkTypeLabel(payload.type) + " opened on Kindle" + location
+        );
+        setStatus("Bookmark opened on Kindle", true);
+
+        if (navigator.vibrate) {
+          navigator.vibrate(20);
+        }
+      } catch (error) {
+        const code = error.payload && error.payload.error;
+
+        if (code === "BOOKMARK_CHANGED") {
+          setBookmarkMessage(
+            "The bookmark list changed. Refresh it and try again.",
+            true
+          );
+        } else {
+          setBookmarkMessage(
+            error.message || "Could not open the bookmark",
+            true
+          );
+        }
+      }
+
+      scheduleConnectionCheck(5000);
+    }
+
+    async function openBookmarkView() {
+      closeNoteView();
+      document.body.classList.add("bookmark-open");
+      bookmarkView.hidden = false;
+      resetOledIdleTimer();
+      await loadBookmarks();
+    }
+
+    function closeBookmarkView() {
+      document.body.classList.remove("bookmark-open");
+      bookmarkView.hidden = true;
+      resetOledIdleTimer();
+    }
+
+    function setBookmarkFilter(filter) {
+      bookmarkFilter = filter;
+
+      bookmarkFilters.forEach((button) => {
+        const selected = button.dataset.bookmarkFilter === filter;
+        button.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+
+      renderBookmarks(bookmarkBook);
+    }
+
     function setToggle(button, enabled) {
       button.setAttribute("aria-pressed", enabled ? "true" : "false");
       button.textContent = enabled ? "On" : "Off";
@@ -1367,6 +1794,7 @@
       nightModeRow.hidden = !capabilities.night_mode;
       fullRefreshRow.hidden = !capabilities.full_refresh;
       footnoteButton.hidden = !capabilities.footnotes;
+      bookmarkButton.hidden = !capabilities.bookmarks;
 
       const hasControls = Boolean(
         capabilities.frontlight
@@ -1675,6 +2103,14 @@
     });
 
     footnoteButton.addEventListener("click", openFootnote);
+    bookmarkButton.addEventListener("click", openBookmarkView);
+    bookmarkBack.addEventListener("click", closeBookmarkView);
+    bookmarkRefresh.addEventListener("click", loadBookmarks);
+    bookmarkFilters.forEach((button) => {
+      button.addEventListener("click", () => {
+        setBookmarkFilter(button.dataset.bookmarkFilter);
+      });
+    });
     noteButton.addEventListener("click", openNoteView);
     noteBack.addEventListener("click", closeNoteView);
     notePull.addEventListener("click", pullNote);
@@ -1729,7 +2165,18 @@
 
       resetOledIdleTimer();
 
-      if (event.key === "Escape" && document.body.classList.contains("note-open")) {
+      if (
+        event.key === "Escape"
+        && document.body.classList.contains("bookmark-open")
+      ) {
+        closeBookmarkView();
+        return;
+      }
+
+      if (
+        event.key === "Escape"
+        && document.body.classList.contains("note-open")
+      ) {
         closeNoteView();
         return;
       }
@@ -1746,6 +2193,10 @@
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
         checkConnection();
+
+        if (document.body.classList.contains("bookmark-open")) {
+          loadBookmarks();
+        }
       }
     });
 

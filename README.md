@@ -41,6 +41,8 @@ The whole project was mostly vibe-coded — okay, basically all of it. It starte
 
 - Turn one page forward or backward
 - Open the next detected footnote on the current EPUB page
+- Browse bookmarks, highlights, and notes from the currently open book
+- Jump the Kindle directly to a selected annotation from the phone
 - Write and edit selected-text notes from the phone
 - Pull an existing KOReader note into the phone editor and push changes back
 - Use an optional pure-black OLED mode with inactivity dimming
@@ -76,6 +78,22 @@ Controls appear only when KOReader reports that the current device supports them
 - Automatic browser reconnect when the reader becomes reachable again
 - URL and QR payload change only after a real IP or port change
 - Compact connection diagnostics inside KOReader
+
+## 🔖 Current-book bookmarks
+
+The `🔖` toolbar button opens a separate list for the book that is currently open in KOReader.
+
+The list contains KOReader's three annotation types:
+
+- page bookmarks
+- text highlights
+- highlights with notes
+
+Each entry shows its type, page or book position, chapter when available, highlighted text, and attached note. The phone view can filter the list by **All**, **Bookmarks**, **Highlights**, or **Notes**.
+
+Tapping an entry adds the current reading position to KOReader's navigation history and moves the Kindle to the selected annotation. The first version is deliberately read-only: it does not edit or delete annotations from the list.
+
+The list is refreshed when the tab opens or when the refresh button is pressed. Up to 300 entries are returned at once to keep the local web interface responsive.
 
 ## ✍️ Notes on Kindle and phone
 
@@ -299,11 +317,13 @@ GET /api/previous
 GET /api/v1/capabilities
 GET /api/v1/device-state
 GET /api/v1/note-session
+GET /api/v1/bookmarks
 ```
 
 ### Reading and note actions
 
 ```http
+POST /api/v1/bookmarks/open?id=...
 POST /api/v1/footnote/open
 POST /api/v1/note-session/push
 POST /api/v1/note-session/save
@@ -355,7 +375,7 @@ A checksum downloaded from the same GitHub release detects damaged or mismatched
 
 - Use KOReader Remote only on a trusted local network.
 - This version does not use authentication or an access token.
-- Anyone who can reach the reader IP and port can use the available controls and can submit text to an active remote-note session.
+- Anyone who can reach the reader IP and port can use the available controls, browse annotations from the open book, navigate to them, and submit text to an active remote-note session.
 - Guest networks may block local device-to-device traffic.
 - A sleeping reader cannot be woken through the remote server.
 - Keeping Wi-Fi active may increase battery use.
