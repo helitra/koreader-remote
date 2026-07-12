@@ -4,29 +4,33 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: koreader-remote-${{ github.event_name == 'workflow_dispatch' && 'release' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
 jobs:
   check-and-release:
-    name: Validate, build, and release
+    name: ${{ github.event_name == 'workflow_dispatch' && 'Validate and publish' || 'Validate' }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Install validation tools
+      - name: Install Lua 5.1
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes lua5.1 unzip zip
+          sudo apt-get update -qq
+          sudo apt-get install --yes --no-install-recommends -qq lua5.1
 
-      - name: Validate repository and plugin
+      - name: Validate repository
         shell: bash
         run: |
           set -euo pipefail
@@ -34,8 +38,8 @@ jobs:
           VERSION="$(tr -d '[:space:]' < VERSION)"
           PLUGIN="koreaderremote.koplugin"
           MAIN="${PLUGIN}/main.lua"
+          CONTROLS="${PLUGIN}/devicecontrols.lua"
           INDEX="${PLUGIN}/web/index.html"
-          ARCHIVE="koreaderremote-v${VERSION}.zip"
           LUAC="$(command -v luac5.1 || command -v luac)"
 
           test -n "${VERSION}"
@@ -48,50 +52,116 @@ jobs:
           test -f VERSION
           test -f "${PLUGIN}/_meta.lua"
           test -f "${MAIN}"
+          test -f "${CONTROLS}"
           test -f "${INDEX}"
 
           test ! -e RELEASE_NOTES.md
           test ! -e scripts
           test ! -e docs
 
-          test "$(wc -l < "${MAIN}")" -ge 500
-          test "$(wc -l < "${INDEX}")" -ge 100
-          test "$(wc -l < README.md)" -ge 100
-
           "${LUAC}" -p "${PLUGIN}/_meta.lua"
           "${LUAC}" -p "${MAIN}"
+          "${LUAC}" -p "${CONTROLS}"
 
           grep -Fq "local VERSION = \"${VERSION}\"" "${MAIN}"
+          grep -Fq "## v${VERSION}" CHANGELOG.md
           grep -Fq 'sorting_hint = "tools"' "${MAIN}"
           grep -Fq '/api/ping' "${MAIN}"
           grep -Fq '/api/next' "${MAIN}"
           grep -Fq '/api/previous' "${MAIN}"
+          grep -Fq '/api/v1/capabilities' "${MAIN}"
+          grep -Fq '/api/v1/device-state' "${MAIN}"
+          grep -Fq '/api/v1/brightness' "${MAIN}"
+          grep -Fq '/api/v1/warmth' "${MAIN}"
+          grep -Fq '/api/v1/night-mode' "${MAIN}"
+          grep -Fq '/api/v1/full-refresh' "${MAIN}"
 
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]] \
-            && [[ "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match VERSION ${VERSION}."
+          python3 - <<'PY'
+          from pathlib import Path
+
+          files = [
+              Path("koreaderremote.koplugin/main.lua"),
+              Path("koreaderremote.koplugin/devicecontrols.lua"),
+              Path("koreaderremote.koplugin/web/index.html"),
+              Path("README.md"),
+              Path("CHANGELOG.md"),
+          ]
+
+          for path in files:
+              data = path.read_bytes()
+              if b"\r\n" in data:
+                  raise SystemExit(f"Windows line endings found in {path}")
+              if b"\x00" in data:
+                  raise SystemExit(f"NUL byte found in {path}")
+          PY
+
+      - name: Build release files and notes
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "Run the release workflow from the main branch."
             exit 1
           fi
 
-          mkdir -p dist
-          zip -r -9 "dist/${ARCHIVE}" "${PLUGIN}"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import zipfile
 
-          if unzip -Z1 "dist/${ARCHIVE}" \
-            | grep -Ev '^koreaderremote\.koplugin(/|$)' >/dev/null; then
-            echo "Release archive contains files outside the plugin folder."
-            exit 1
-          fi
+          version = Path("VERSION").read_text(encoding="utf-8").strip()
+          plugin = Path("koreaderremote.koplugin")
+          dist = Path("dist")
+          dist.mkdir(exist_ok=True)
 
-          (
-            cd dist
-            sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          archive = dist / f"koreaderremote-v{version}.zip"
+          with zipfile.ZipFile(
+              archive,
+              "w",
+              compression=zipfile.ZIP_DEFLATED,
+              compresslevel=9,
+          ) as output:
+              for path in sorted(plugin.rglob("*")):
+                  if path.is_file():
+                      output.write(path, path.as_posix())
+
+          with zipfile.ZipFile(archive, "r") as packaged:
+              names = packaged.namelist()
+              if not names:
+                  raise SystemExit("Release archive is empty.")
+              invalid = [
+                  name for name in names
+                  if not name.startswith("koreaderremote.koplugin/")
+              ]
+              if invalid:
+                  raise SystemExit(
+                      "Release archive contains files outside the plugin folder: "
+                      + ", ".join(invalid)
+                  )
+
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          checksum = dist / f"{archive.name}.sha256"
+          checksum.write_text(
+              f"{digest}  {archive.name}\n",
+              encoding="utf-8",
           )
 
-          test -s "dist/${ARCHIVE}"
-          test -s "dist/${ARCHIVE}.sha256"
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          heading = f"## v{version}"
+          start = changelog.find(heading)
+          if start < 0:
+              raise SystemExit(f"Missing {heading} in CHANGELOG.md")
 
-      - name: Create or update GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+          next_heading = changelog.find("\n## v", start + len(heading))
+          notes = changelog[start:next_heading if next_heading >= 0 else None]
+          notes = notes.strip() + "\n"
+          (dist / "release-notes.md").write_text(notes, encoding="utf-8")
+          PY
+
+      - name: Create tag and GitHub release
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -100,28 +170,48 @@ jobs:
           set -euo pipefail
 
           VERSION="$(tr -d '[:space:]' < VERSION)"
-          TAG="${GITHUB_REF_NAME}"
-          ARCHIVE="koreaderremote-v${VERSION}.zip"
-          RELEASE_FLAGS=(--latest)
+          TAG="v${VERSION}"
+          ARCHIVE="dist/koreaderremote-v${VERSION}.zip"
+          CHECKSUM="${ARCHIVE}.sha256"
+          NOTES="dist/release-notes.md"
 
+          git fetch --tags --force
+          EXISTING_SHA="$(git rev-list -n 1 "${TAG}" 2>/dev/null || true)"
+
+          if [[ -n "${EXISTING_SHA}" && "${EXISTING_SHA}" != "${GITHUB_SHA}" ]]; then
+            echo "Tag ${TAG} already points to ${EXISTING_SHA}, not ${GITHUB_SHA}."
+            exit 1
+          fi
+
+          if [[ -z "${EXISTING_SHA}" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${TAG}" "${GITHUB_SHA}" -m "KOReader Remote ${TAG}"
+            git push origin "${TAG}"
+          fi
+
+          RELEASE_FLAGS=(--latest)
           if [[ "${VERSION}" == *-* ]]; then
             RELEASE_FLAGS=(--prerelease)
           fi
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release upload "${TAG}" \
-              "dist/${ARCHIVE}" \
-              "dist/${ARCHIVE}.sha256" \
+              "${ARCHIVE}" \
+              "${CHECKSUM}" \
               --clobber
             gh release edit "${TAG}" \
               --title "KOReader Remote ${TAG}" \
+              --notes-file "${NOTES}" \
               "${RELEASE_FLAGS[@]}"
           else
             gh release create "${TAG}" \
-              "dist/${ARCHIVE}" \
-              "dist/${ARCHIVE}.sha256" \
+              "${ARCHIVE}" \
+              "${CHECKSUM}" \
               --verify-tag \
               --title "KOReader Remote ${TAG}" \
-              --generate-notes \
+              --notes-file "${NOTES}" \
               "${RELEASE_FLAGS[@]}"
           fi
+
+          gh release view "${TAG}"

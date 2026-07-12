@@ -16,10 +16,9 @@
 
     html,
     body {
-      width: 100%;
-      height: 100%;
+      min-width: 100%;
+      min-height: 100%;
       margin: 0;
-      overflow: hidden;
       background: #111;
       color: #fff;
     }
@@ -34,10 +33,10 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       width: 100%;
-      height: 100%;
+      min-height: 68svh;
     }
 
-    button {
+    .page-button {
       border: 0;
       border-radius: 0;
       background: #1c1c1c;
@@ -48,36 +47,177 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    button:first-child { border-right: 1px solid #444; }
+    .page-button:first-child { border-right: 1px solid #444; }
     button:active { background: #333; }
 
     #status {
       position: fixed;
+      z-index: 10;
       top: max(10px, env(safe-area-inset-top));
       left: 50%;
+      max-width: calc(100% - 24px);
       transform: translateX(-50%);
+      overflow: hidden;
       padding: 0.45rem 0.8rem;
       border-radius: 999px;
-      background: rgba(0, 0, 0, 0.75);
+      background: rgba(0, 0, 0, 0.78);
       font-size: 0.85rem;
       pointer-events: none;
+      text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    #device-controls {
+      border-top: 1px solid #444;
+      background: #171717;
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 1rem;
+      font-size: 1rem;
+      font-weight: 650;
+      list-style-position: inside;
+    }
+
+    .controls {
+      display: grid;
+      gap: 0.9rem;
+      padding: 0 1rem 1rem;
+    }
+
+    .control-row {
+      display: grid;
+      grid-template-columns: minmax(7rem, 0.7fr) minmax(0, 1.3fr);
+      align-items: center;
+      gap: 0.8rem;
+      min-height: 2.75rem;
+    }
+
+    .control-label {
+      font-size: 0.95rem;
+    }
+
+    .range-wrap {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 3.5rem;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      min-height: 2.5rem;
+      accent-color: currentColor;
+    }
+
+    output {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .small-button {
+      width: 100%;
+      min-height: 2.75rem;
+      border: 1px solid #555;
+      border-radius: 0.55rem;
+      background: #252525;
+      color: inherit;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .small-button[aria-pressed="true"] {
+      background: #e8e8e8;
+      color: #111;
+    }
+
+    .wide-row {
+      grid-template-columns: 1fr;
+    }
+
+    [hidden] { display: none !important; }
+
+    @media (max-height: 620px) {
+      #remote { min-height: 58svh; }
     }
   </style>
 </head>
 <body>
   <main id="remote" aria-label="KOReader-Fernbedienung">
-    <button id="previous" type="button" aria-label="Vorherige Seite">‹</button>
-    <button id="next" type="button" aria-label="Nächste Seite">›</button>
+    <button class="page-button" id="previous" type="button"
+            aria-label="Vorherige Seite">‹</button>
+    <button class="page-button" id="next" type="button"
+            aria-label="Nächste Seite">›</button>
   </main>
+
+  <details id="device-controls" hidden>
+    <summary>Gerätesteuerung</summary>
+
+    <div class="controls">
+      <div class="control-row" id="frontlight-row" hidden>
+        <span class="control-label">Frontlicht</span>
+        <button class="small-button" id="frontlight-toggle" type="button"
+                aria-pressed="false">Aus</button>
+      </div>
+
+      <label class="control-row" id="brightness-row" hidden>
+        <span class="control-label">Helligkeit</span>
+        <span class="range-wrap">
+          <input id="brightness" type="range" min="1" max="100" value="50">
+          <output id="brightness-value" for="brightness">50 %</output>
+        </span>
+      </label>
+
+      <label class="control-row" id="warmth-row" hidden>
+        <span class="control-label">Wärme</span>
+        <span class="range-wrap">
+          <input id="warmth" type="range" min="0" max="100" value="0">
+          <output id="warmth-value" for="warmth">0 %</output>
+        </span>
+      </label>
+
+      <div class="control-row" id="night-mode-row" hidden>
+        <span class="control-label">Nachtmodus</span>
+        <button class="small-button" id="night-mode-toggle" type="button"
+                aria-pressed="false">Aus</button>
+      </div>
+
+      <div class="control-row wide-row" id="full-refresh-row" hidden>
+        <button class="small-button" id="full-refresh" type="button">
+          Vollständige Bildschirmaktualisierung
+        </button>
+      </div>
+    </div>
+  </details>
 
   <div id="status" role="status">Verbinde …</div>
 
   <script>
     const statusElement = document.getElementById("status");
-    let requestRunning = false;
+    const deviceControlsElement = document.getElementById("device-controls");
+    const frontlightRow = document.getElementById("frontlight-row");
+    const brightnessRow = document.getElementById("brightness-row");
+    const warmthRow = document.getElementById("warmth-row");
+    const nightModeRow = document.getElementById("night-mode-row");
+    const fullRefreshRow = document.getElementById("full-refresh-row");
+    const frontlightToggle = document.getElementById("frontlight-toggle");
+    const brightnessSlider = document.getElementById("brightness");
+    const brightnessValue = document.getElementById("brightness-value");
+    const warmthSlider = document.getElementById("warmth");
+    const warmthValue = document.getElementById("warmth-value");
+    const nightModeToggle = document.getElementById("night-mode-toggle");
+
+    let pageRequestRunning = false;
     let reconnectTimer = null;
+    let brightnessTimer = null;
+    let warmthTimer = null;
     let failedPings = 0;
+    let capabilities = null;
+    let deviceState = null;
 
     function setStatus(text) {
       statusElement.textContent = text;
@@ -106,18 +246,114 @@
       }
     }
 
+    async function readJSON(response) {
+      let payload = null;
+
+      try {
+        payload = await response.json();
+      } catch (error) {
+        console.debug("KOReader Remote returned no JSON:", error);
+      }
+
+      if (!response.ok) {
+        const message = payload && payload.message
+          ? payload.message
+          : "HTTP " + response.status;
+        const requestError = new Error(message);
+        requestError.payload = payload;
+        throw requestError;
+      }
+
+      return payload;
+    }
+
+    async function getJSON(path) {
+      const response = await fetchWithTimeout(path, {
+        method: "GET",
+        cache: "no-store",
+      });
+      return readJSON(response);
+    }
+
+    async function postJSON(path) {
+      const response = await fetchWithTimeout(path, {
+        method: "POST",
+        cache: "no-store",
+      });
+      return readJSON(response);
+    }
+
+    function setToggle(button, enabled) {
+      button.setAttribute("aria-pressed", enabled ? "true" : "false");
+      button.textContent = enabled ? "An" : "Aus";
+    }
+
+    function applyCapabilities(nextCapabilities) {
+      capabilities = nextCapabilities || {};
+
+      frontlightRow.hidden = !capabilities.frontlight;
+      brightnessRow.hidden = !capabilities.brightness;
+      warmthRow.hidden = !capabilities.warmth;
+      nightModeRow.hidden = !capabilities.night_mode;
+      fullRefreshRow.hidden = !capabilities.full_refresh;
+
+      deviceControlsElement.hidden = !(
+        capabilities.frontlight
+        || capabilities.brightness
+        || capabilities.warmth
+        || capabilities.night_mode
+        || capabilities.full_refresh
+      );
+    }
+
+    function applyDeviceState(nextState) {
+      deviceState = nextState || {};
+
+      if (typeof deviceState.frontlight_on === "boolean") {
+        setToggle(frontlightToggle, deviceState.frontlight_on);
+      }
+
+      if (typeof deviceState.brightness === "number") {
+        const brightness = Math.max(1, Math.min(100, deviceState.brightness));
+        if (document.activeElement !== brightnessSlider) {
+          brightnessSlider.value = String(brightness);
+        }
+        brightnessValue.textContent = Math.round(brightness) + " %";
+      }
+
+      if (typeof deviceState.warmth === "number") {
+        const warmth = Math.max(0, Math.min(100, deviceState.warmth));
+        if (document.activeElement !== warmthSlider) {
+          warmthSlider.value = String(warmth);
+        }
+        warmthValue.textContent = Math.round(warmth) + " %";
+      }
+
+      if (typeof deviceState.night_mode === "boolean") {
+        setToggle(nightModeToggle, deviceState.night_mode);
+      }
+    }
+
+    async function loadCapabilities() {
+      const payload = await getJSON("/api/v1/capabilities");
+      applyCapabilities(payload.capabilities);
+    }
+
+    async function loadDeviceState() {
+      const payload = await getJSON("/api/v1/device-state");
+      applyDeviceState(payload.state);
+    }
+
     async function checkConnection() {
       try {
-        const response = await fetchWithTimeout(
-          "/api/ping",
-          { cache: "no-store" }
-        );
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
+        const info = await getJSON("/api/ping");
+        failedPings = 0;
+
+        if (!capabilities) {
+          await loadCapabilities();
         }
 
-        const info = await response.json();
-        failedPings = 0;
+        await loadDeviceState();
 
         if (info.document_open === false) {
           setStatus("Buch auf dem Reader öffnen");
@@ -140,12 +376,12 @@
       }
     }
 
-    async function request(path, label) {
-      if (requestRunning) {
+    async function pageRequest(path, label) {
+      if (pageRequestRunning) {
         return;
       }
 
-      requestRunning = true;
+      pageRequestRunning = true;
       setStatus(label + " …");
 
       try {
@@ -163,10 +399,7 @@
           }
         }
 
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
-        }
-
+        await readJSON(response);
         failedPings = 0;
         setStatus("Verbunden");
         scheduleConnectionCheck(15000);
@@ -175,16 +408,57 @@
           navigator.vibrate(15);
         }
       } catch (error) {
-        console.error("KOReader Remote request failed:", error);
+        console.error("KOReader Remote page request failed:", error);
         setStatus("Verbinde neu …");
         scheduleConnectionCheck(2000);
       } finally {
-        requestRunning = false;
+        pageRequestRunning = false;
       }
     }
 
-    function previousPage() { request("/api/previous", "Zurück"); }
-    function nextPage() { request("/api/next", "Weiter"); }
+    async function controlRequest(path, label) {
+      setStatus(label + " …");
+
+      try {
+        const payload = await postJSON(path);
+        if (payload && payload.state) {
+          applyDeviceState(payload.state);
+        }
+        setStatus("Verbunden");
+        scheduleConnectionCheck(15000);
+      } catch (error) {
+        console.error("KOReader Remote control request failed:", error);
+        const code = error.payload && error.payload.error;
+
+        if (code === "NOT_SUPPORTED") {
+          capabilities = null;
+          setStatus("Funktion nicht unterstützt");
+          window.setTimeout(checkConnection, 700);
+        } else {
+          setStatus(error.message || "Steuerung fehlgeschlagen");
+          scheduleConnectionCheck(2500);
+        }
+      }
+    }
+
+    function previousPage() {
+      pageRequest("/api/previous", "Zurück");
+    }
+
+    function nextPage() {
+      pageRequest("/api/next", "Weiter");
+    }
+
+    function scheduleSliderRequest(timerName, callback) {
+      window.clearTimeout(timerName === "brightness" ? brightnessTimer : warmthTimer);
+      const timer = window.setTimeout(callback, 180);
+
+      if (timerName === "brightness") {
+        brightnessTimer = timer;
+      } else {
+        warmthTimer = timer;
+      }
+    }
 
     document.getElementById("previous")
       .addEventListener("click", previousPage);
@@ -192,7 +466,50 @@
     document.getElementById("next")
       .addEventListener("click", nextPage);
 
+    frontlightToggle.addEventListener("click", () => {
+      controlRequest("/api/v1/frontlight/toggle", "Frontlicht");
+    });
+
+    brightnessSlider.addEventListener("input", () => {
+      const value = brightnessSlider.value;
+      brightnessValue.textContent = value + " %";
+      scheduleSliderRequest("brightness", () => {
+        controlRequest(
+          "/api/v1/brightness?value=" + encodeURIComponent(value),
+          "Helligkeit"
+        );
+      });
+    });
+
+    warmthSlider.addEventListener("input", () => {
+      const value = warmthSlider.value;
+      warmthValue.textContent = value + " %";
+      scheduleSliderRequest("warmth", () => {
+        controlRequest(
+          "/api/v1/warmth?value=" + encodeURIComponent(value),
+          "Wärme"
+        );
+      });
+    });
+
+    nightModeToggle.addEventListener("click", () => {
+      const enabled = !(deviceState && deviceState.night_mode === true);
+      controlRequest(
+        "/api/v1/night-mode?enabled=" + String(enabled),
+        "Nachtmodus"
+      );
+    });
+
+    document.getElementById("full-refresh")
+      .addEventListener("click", () => {
+        controlRequest("/api/v1/full-refresh", "Bildschirmaktualisierung");
+      });
+
     document.addEventListener("keydown", (event) => {
+      if (event.target instanceof HTMLInputElement) {
+        return;
+      }
+
       if (event.key === "ArrowLeft") {
         previousPage();
       }

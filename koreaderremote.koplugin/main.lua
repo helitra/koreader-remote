@@ -1,4 +1,4 @@
--- KOReader Remote v0.5.0
+-- KOReader Remote v0.6.0
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,13 +11,14 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.5.0"
+local VERSION = "0.6.0"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
 local AUTOSTART_SETTINGS_KEY = "koreaderremote_autostart"
 local PLUGIN_DIR = DataStorage:getDataDir() .. "/plugins/koreaderremote.koplugin"
 local INDEX_FILE = PLUGIN_DIR .. "/web/index.html"
+local DeviceControls = dofile(PLUGIN_DIR .. "/devicecontrols.lua")
 
 local STATE_STOPPED = "stopped"
 local STATE_WAITING = "waiting_for_wifi"
@@ -39,6 +40,7 @@ local HTTP_STATUS = {
     [404] = "Not Found",
     [405] = "Method Not Allowed",
     [500] = "Internal Server Error",
+    [501] = "Not Implemented",
     [503] = "Service Unavailable",
 }
 
@@ -100,12 +102,139 @@ local function isUsableIPv4(address)
     return a <= 255 and b <= 255 and c <= 255 and d <= 255
 end
 
+
+local function jsonEscape(value)
+    value = tostring(value)
+    value = value:gsub("\\", "\\\\")
+    value = value:gsub('"', '\\"')
+    value = value:gsub("\b", "\\b")
+    value = value:gsub("\f", "\\f")
+    value = value:gsub("\n", "\\n")
+    value = value:gsub("\r", "\\r")
+    value = value:gsub("\t", "\\t")
+    value = value:gsub("[%z\1-\31]", function(character)
+        return string.format("\\u%04x", string.byte(character))
+    end)
+    return '"' .. value .. '"'
+end
+
+local function jsonEncode(value)
+    local value_type = type(value)
+
+    if value_type == "nil" then
+        return "null"
+    elseif value_type == "boolean" then
+        return value and "true" or "false"
+    elseif value_type == "number" then
+        if value ~= value or value == math.huge or value == -math.huge then
+            return "null"
+        end
+        return tostring(value)
+    elseif value_type == "string" then
+        return jsonEscape(value)
+    elseif value_type ~= "table" then
+        return jsonEscape(tostring(value))
+    end
+
+    local is_array = true
+    local maximum_index = 0
+    local item_count = 0
+
+    for key in pairs(value) do
+        item_count = item_count + 1
+        if type(key) ~= "number"
+            or key < 1
+            or key % 1 ~= 0 then
+            is_array = false
+            break
+        end
+        if key > maximum_index then
+            maximum_index = key
+        end
+    end
+
+    if is_array and maximum_index == item_count then
+        local parts = {}
+        for index = 1, maximum_index do
+            parts[index] = jsonEncode(value[index])
+        end
+        return "[" .. table.concat(parts, ",") .. "]"
+    end
+
+    local keys = {}
+    for key in pairs(value) do
+        table.insert(keys, tostring(key))
+    end
+    table.sort(keys)
+
+    local parts = {}
+    for _, key in ipairs(keys) do
+        table.insert(
+            parts,
+            jsonEscape(key) .. ":" .. jsonEncode(value[key])
+        )
+    end
+
+    return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local function urlDecode(value)
+    value = tostring(value or "")
+    value = value:gsub("%+", " ")
+    return value:gsub("%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end)
+end
+
+local function parseRequestURI(raw_uri)
+    local path, query = raw_uri:match("^([^?]*)%??(.*)$")
+    local params = {}
+
+    if query and query ~= "" then
+        for pair in query:gmatch("[^&]+") do
+            local key, value = pair:match("^([^=]+)=?(.*)$")
+            if key then
+                params[urlDecode(key)] = urlDecode(value)
+            end
+        end
+    end
+
+    return path or raw_uri, params
+end
+
+local function parseBoolean(value)
+    if value == true
+        or value == "true"
+        or value == "1"
+        or value == "on" then
+        return true
+    end
+
+    if value == false
+        or value == "false"
+        or value == "0"
+        or value == "off" then
+        return false
+    end
+
+    return nil
+end
+
 function Remote:init()
     self.port = tonumber(G_reader_settings:readSetting(PORT_SETTINGS_KEY))
         or DEFAULT_PORT
     runtime.autostart = G_reader_settings:isTrue(AUTOSTART_SETTINGS_KEY)
     runtime.owner = self
     runtime.document_open = self.ui ~= nil and self.ui.document ~= nil
+
+    if not runtime.device_controls then
+        runtime.device_controls = DeviceControls:new{
+            get_ui = function()
+                local owner = runtime.owner
+                return owner and owner.ui or nil
+            end,
+        }
+    end
 
     -- Keep one stable function reference so UIManager:unschedule() can remove
     -- it, while always dispatching to the newest plugin instance.
@@ -986,6 +1115,25 @@ function Remote:sendResponse(request_id, status, content_type, body, counts_as_i
     end
 end
 
+
+function Remote:sendJSON(request_id, status, payload, counts_as_input)
+    return self:sendResponse(
+        request_id,
+        status,
+        "application/json; charset=utf-8",
+        jsonEncode(payload),
+        counts_as_input
+    )
+end
+
+function Remote:sendControlError(request_id, status, code, message)
+    return self:sendJSON(request_id, status, {
+        ok = false,
+        error = code,
+        message = message,
+    })
+end
+
 function Remote:readIndex()
     local file, err = io.open(INDEX_FILE, "rb")
     if not file then
@@ -1017,8 +1165,11 @@ function Remote:turnPage(delta)
 end
 
 function Remote:onRequest(data, request_id)
-    local method, uri = data:match("^(%u+)%s+([^%s]+)%s+HTTP/%d%.%d")
-    if not method or not uri then
+    local method, raw_uri = data:match(
+        "^(%u+)%s+([^%s]+)%s+HTTP/%d%.%d"
+    )
+
+    if not method or not raw_uri then
         return self:sendResponse(
             request_id,
             400,
@@ -1027,19 +1178,28 @@ function Remote:onRequest(data, request_id)
         )
     end
 
-    uri = uri:match("^([^?]*)") or uri
+    local uri, params = parseRequestURI(raw_uri)
     logger.dbg("KOReaderRemote:", method, uri)
 
-    if method ~= "GET" then
+    if method ~= "GET" and method ~= "POST" then
         return self:sendResponse(
             request_id,
             405,
             "text/plain; charset=utf-8",
-            "Only GET is supported"
+            "Only GET and POST are supported"
         )
     end
 
     if uri == "/" or uri == "/index.html" then
+        if method ~= "GET" then
+            return self:sendResponse(
+                request_id,
+                405,
+                "text/plain; charset=utf-8",
+                "Only GET is supported for this resource"
+            )
+        end
+
         local body, err = self:readIndex()
         if not body then
             logger.err("KOReaderRemote: could not read index.html:", err)
@@ -1061,71 +1221,175 @@ function Remote:onRequest(data, request_id)
     end
 
     if uri == "/api/ping" then
-        local ip_json = runtime.local_ip
-            and string.format('"%s"', runtime.local_ip)
-            or "null"
-        local url_json = runtime.connection_url
-            and string.format('"%s"', runtime.connection_url)
-            or "null"
-        local body = string.format(
-            '{"ok":true,"version":"%s","state":"%s","port":%d,'
-            .. '"autostart":%s,"manual_session":%s,'
-            .. '"document_open":%s,"ip":%s,"url":%s,'
-            .. '"url_revision":%d,"manual_sleep_grace_seconds":%d}',
-            VERSION,
-            runtime.state,
-            runtime.running_port or self:getPort(),
-            runtime.autostart and "true" or "false",
-            runtime.manual_session and "true" or "false",
-            self:hasOpenDocument() and "true" or "false",
-            ip_json,
-            url_json,
-            runtime.connection_revision,
-            MANUAL_SLEEP_GRACE_SECONDS
-        )
-
-        return self:sendResponse(
-            request_id,
-            200,
-            "application/json; charset=utf-8",
-            body
-        )
-    end
-
-    if uri == "/api/next" then
-        if not self:turnPage(1) then
-            return self:sendResponse(
+        if method ~= "GET" then
+            return self:sendControlError(
                 request_id,
-                409,
-                "application/json; charset=utf-8",
-                '{"ok":false,"error":"NO_DOCUMENT_OPEN"}'
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use GET for this endpoint."
             )
         end
 
-        return self:sendResponse(
+        return self:sendJSON(request_id, 200, {
+            ok = true,
+            version = VERSION,
+            state = runtime.state,
+            port = runtime.running_port or self:getPort(),
+            autostart = runtime.autostart == true,
+            manual_session = runtime.manual_session == true,
+            document_open = self:hasOpenDocument(),
+            ip = runtime.local_ip,
+            url = runtime.connection_url,
+            url_revision = runtime.connection_revision,
+            manual_sleep_grace_seconds = MANUAL_SLEEP_GRACE_SECONDS,
+        })
+    end
+
+    if uri == "/api/next" or uri == "/api/previous" then
+        if method ~= "GET" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use GET for legacy page-turn endpoints."
+            )
+        end
+
+        local delta = uri == "/api/next" and 1 or -1
+        local action = delta == 1 and "next" or "previous"
+
+        if not self:turnPage(delta) then
+            return self:sendControlError(
+                request_id,
+                409,
+                "NO_DOCUMENT_OPEN",
+                "Open a book on the reader first."
+            )
+        end
+
+        return self:sendJSON(
             request_id,
             200,
-            "application/json; charset=utf-8",
-            '{"ok":true,"action":"next"}',
+            { ok = true, action = action },
             true
         )
     end
 
-    if uri == "/api/previous" then
-        if not self:turnPage(-1) then
-            return self:sendResponse(
+    local controls = runtime.device_controls
+
+    if uri == "/api/v1/capabilities" then
+        if method ~= "GET" then
+            return self:sendControlError(
                 request_id,
-                409,
-                "application/json; charset=utf-8",
-                '{"ok":false,"error":"NO_DOCUMENT_OPEN"}'
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use GET for this endpoint."
             )
         end
 
-        return self:sendResponse(
+        return self:sendJSON(request_id, 200, {
+            ok = true,
+            version = VERSION,
+            capabilities = controls:getCapabilities(),
+        })
+    end
+
+    if uri == "/api/v1/device-state" then
+        if method ~= "GET" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use GET for this endpoint."
+            )
+        end
+
+        return self:sendJSON(request_id, 200, {
+            ok = true,
+            version = VERSION,
+            state = controls:getState(),
+        })
+    end
+
+    if uri:match("^/api/v1/") then
+        if method ~= "POST" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use POST for device-control actions."
+            )
+        end
+
+        local ok, result, message
+        local action
+
+        if uri == "/api/v1/frontlight/toggle" then
+            action = "frontlight_toggle"
+            ok, result, message = controls:toggleFrontlight()
+        elseif uri == "/api/v1/frontlight" then
+            action = "frontlight"
+            local enabled = parseBoolean(params.enabled)
+            if enabled == nil then
+                return self:sendControlError(
+                    request_id,
+                    400,
+                    "INVALID_VALUE",
+                    "The enabled parameter must be true or false."
+                )
+            end
+            ok, result, message = controls:setFrontlight(enabled)
+        elseif uri == "/api/v1/brightness" then
+            action = "brightness"
+            ok, result, message = controls:setBrightness(params.value)
+        elseif uri == "/api/v1/warmth" then
+            action = "warmth"
+            ok, result, message = controls:setWarmth(params.value)
+        elseif uri == "/api/v1/night-mode/toggle" then
+            action = "night_mode_toggle"
+            ok, result, message = controls:toggleNightMode()
+        elseif uri == "/api/v1/night-mode" then
+            action = "night_mode"
+            local enabled = parseBoolean(params.enabled)
+            if enabled == nil then
+                return self:sendControlError(
+                    request_id,
+                    400,
+                    "INVALID_VALUE",
+                    "The enabled parameter must be true or false."
+                )
+            end
+            ok, result, message = controls:setNightMode(enabled)
+        elseif uri == "/api/v1/full-refresh" then
+            action = "full_refresh"
+            ok, result, message = controls:fullRefresh()
+        else
+            return self:sendControlError(
+                request_id,
+                404,
+                "NOT_FOUND",
+                "Unknown device-control endpoint."
+            )
+        end
+
+        if not ok then
+            local status = result == "NOT_SUPPORTED" and 501 or 400
+            return self:sendControlError(
+                request_id,
+                status,
+                result,
+                message
+            )
+        end
+
+        return self:sendJSON(
             request_id,
             200,
-            "application/json; charset=utf-8",
-            '{"ok":true,"action":"previous"}',
+            {
+                ok = true,
+                action = action,
+                state = result,
+            },
             true
         )
     end
@@ -1141,6 +1405,7 @@ function Remote:onRequest(data, request_id)
         "Not found"
     )
 end
+
 
 -- Menu ----------------------------------------------------------------------
 

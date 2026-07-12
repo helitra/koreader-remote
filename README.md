@@ -1,8 +1,8 @@
 # KOReader Remote
 
-KOReader Remote is a small plugin that lets you turn pages in KOReader from your phone.
+KOReader Remote is a small plugin that lets you turn pages and control supported reader settings in KOReader from your phone.
 
-It works over your local Wi-Fi network. You do not need to install an app on your phone. Start the remote server, scan the QR code, and tap left or right to turn the page.
+It works over your local Wi-Fi network. You do not need to install an app on your phone. Start the remote server, scan the QR code, and use the remote website in your browser.
 
 ## Why I made this
 
@@ -32,6 +32,8 @@ https://github.com/user-attachments/assets/f81e5089-8f5f-4a0a-93cc-433873eff57c
 - Restore the server after any sleep when autostart is enabled
 - Wait for Wi-Fi and retry automatically after standby or resume
 - Reconnect the phone website automatically when the reader becomes reachable again
+- Control supported frontlight, brightness, warmth, night mode, and full refresh functions
+- Hide unsupported controls automatically
 - Show compact server and network diagnostics in KOReader
 - Use a configurable server port
 - Open and remove the Kindle firewall rule when needed
@@ -39,11 +41,11 @@ https://github.com/user-attachments/assets/f81e5089-8f5f-4a0a-93cc-433873eff57c
 
 ## Compatibility
 
-- **Kindle:** tested
-- **Kobo:** expected to work, but not yet tested on real Kobo hardware
-- **Other KOReader devices:** not tested yet
+- **Kindle:** primary test platform
+- **Kobo:** expected to work, but real-device feedback is still needed
+- **Other KOReader devices:** device controls appear only when KOReader reports support
 
-Feedback from other devices is welcome. Please include the exact device model, KOReader version, and plugin version when reporting a result.
+Please include the exact device model, KOReader version, and plugin version when reporting compatibility results.
 
 ## Requirements
 
@@ -114,6 +116,27 @@ The cached pairing URL and QR payload are replaced only when the detected IP add
 
 Pairing is only a quick way to open the correct local link. It does not use a password or access token.
 
+## Using the remote
+
+The upper part of the website contains two large page buttons:
+
+- Left side: previous page
+- Right side: next page
+
+You can also use the left and right arrow keys on a device with a keyboard.
+
+Open **Gerätesteuerung** below the page buttons to access the controls supported by the current reader:
+
+- Frontlight on or off
+- Brightness
+- Warm-light level
+- KOReader night mode
+- Full-screen refresh
+
+Unsupported controls are not shown. The sliders wait briefly before sending a change so that moving them does not flood the reader with requests.
+
+When no book is open, the server remains available but page-turn requests return `409 Conflict`. Device controls can still work from the file manager when KOReader and the device support them.
+
 ## Manual sessions and autostart
 
 `Start remote server` creates a manual session for the current KOReader run.
@@ -154,20 +177,9 @@ After wake-up, KOReader Remote:
 - keeps the old pairing URL when the same IP returns
 - updates the URL and QR payload only after a real IP or port change
 
-The phone website checks the connection automatically. Passive status checks do not reset KOReader's sleep timer.
+The phone website checks the connection automatically and reloads the current device state after reconnecting. Passive status checks do not reset KOReader's sleep timer.
 
-If the reader wakes up with the same IP address, the existing browser page should reconnect without a manual reload. If the IP address changed, scan the current QR code again.
-
-## Using the remote
-
-The remote website has two large buttons:
-
-- Left side: previous page
-- Right side: next page
-
-You can also use the left and right arrow keys on a device with a keyboard.
-
-When no book is open, the server remains available but page-turn requests return `409 Conflict`. The phone page then asks you to open a book on the reader.
+If the reader wakes with the same IP address, the existing browser page should reconnect without a manual reload. If the IP address changed, scan the current QR code again.
 
 ## Connection status
 
@@ -210,57 +222,76 @@ If the server is already running, the plugin stops it and starts it again on the
 
 ## API
 
-KOReader Remote provides a small local HTTP API.
+KOReader Remote provides a small, restricted local HTTP API. It does not expose arbitrary KOReader events.
 
-### Status
+### Existing endpoints
 
 ```http
 GET /api/ping
+GET /api/next
+GET /api/previous
 ```
 
-Example response:
+### Capabilities
+
+```http
+GET /api/v1/capabilities
+```
+
+Example:
 
 ```json
 {
   "ok": true,
-  "version": "0.5.0",
-  "state": "running",
-  "port": 8081,
-  "autostart": false,
-  "manual_session": true,
-  "document_open": true,
-  "ip": "192.168.1.42",
-  "url": "http://192.168.1.42:8081/",
-  "url_revision": 1,
-  "manual_sleep_grace_seconds": 300
+  "version": "0.6.0",
+  "capabilities": {
+    "page_turn": true,
+    "frontlight": true,
+    "brightness": true,
+    "warmth": true,
+    "night_mode": true,
+    "full_refresh": true
+  }
 }
 ```
 
-`url_revision` increases only when the pairing URL actually changes.
-
-### Next page
+### Device state
 
 ```http
-GET /api/next
+GET /api/v1/device-state
 ```
 
-### Previous page
+The response contains only state supported by the current device.
+
+### Device actions
+
+The lightweight KOReader TCP server reads the request line and headers, so action values are sent as query parameters on restricted `POST` routes:
 
 ```http
-GET /api/previous
+POST /api/v1/frontlight/toggle
+POST /api/v1/frontlight?enabled=true
+POST /api/v1/brightness?value=65
+POST /api/v1/warmth?value=40
+POST /api/v1/night-mode?enabled=true
+POST /api/v1/night-mode/toggle
+POST /api/v1/full-refresh
 ```
 
-## Notes
+Brightness and warmth values use a simple `0` to `100` scale. The plugin converts brightness to the current device's native range. A brightness value of `0` switches the frontlight off.
+
+## Security notes
 
 - Use KOReader Remote only on a trusted local network.
 - This version does not use authentication or an access token.
-- Anyone who can reach the reader IP and port may send page-turn commands.
+- Anyone who can reach the reader IP and port may use the available controls.
 - Reader and phone must be able to communicate directly.
 - Guest networks may block local device-to-device traffic.
 - A fully sleeping reader cannot be woken through the remote server.
-- The reader may receive a different IP address after reconnecting to Wi-Fi.
-- Scan the pairing QR code again when the old address no longer works.
 - Keeping Wi-Fi active may increase battery use.
+
+## Releases
+
+The GitHub Actions workflow validates normal pushes. A manually started release run reads `VERSION`, creates the matching Git tag, builds the plugin-only ZIP and SHA-256 checksum, and publishes the matching `CHANGELOG.md` section directly as the GitHub release description.
 
 ## License
 

@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.6.0
+
+### Added
+
+- Added capability-aware device controls to the phone website.
+- Added frontlight on/off control on supported devices.
+- Added brightness control with device-specific value conversion.
+- Added warm-light control on devices that report natural-light support.
+- Added KOReader night-mode control.
+- Added a manual full-screen refresh action on supported E-Ink devices.
+- Added `GET /api/v1/capabilities` and `GET /api/v1/device-state`.
+- Added restricted `POST /api/v1/*` endpoints for supported device actions.
+- Added `devicecontrols.lua` to keep hardware control logic separate from the server lifecycle.
+
+### Changed
+
+- Device controls are hidden automatically when the reader does not support them.
+- Brightness and warmth slider requests are debounced to avoid flooding the reader.
+- Device state is synchronized again after reconnecting to the reader.
+- The release workflow now creates the version tag automatically when manually started from `main`.
+- GitHub release descriptions are now taken directly from the matching `CHANGELOG.md` section.
+- Release ZIP and SHA-256 files are still built automatically and contain only the plugin folder.
+
+### Compatibility
+
+- Legacy page-turn endpoints remain available unchanged.
+- The existing v0.5.0 manual-session, sleep, reconnect, URL, and QR-code behavior remains unchanged.
+
 ## v0.5.0
 
 - Added reliable Wi-Fi recovery after standby and resume.
@@ -15,8 +43,6 @@
 - Closing KOReader or disabling the plugin cleans up the server and Kindle firewall rule.
 - Page-turn requests now return `409 Conflict` when no document is open.
 - Added `state`, `manual_session`, `document_open`, `url_revision`, and `manual_sleep_grace_seconds` to `/api/ping`.
-- Replaced the previous multi-job release workflow with one small validation-and-release job.
-- Git tags now validate the version, build the plugin-only ZIP, generate its SHA-256 checksum, and create or update the GitHub release automatically.
 
 ## v0.4.0
 
