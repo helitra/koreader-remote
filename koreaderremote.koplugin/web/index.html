@@ -699,6 +699,7 @@
     }
 
     .bookmark-card {
+      position: relative;
       display: block;
       width: 100%;
       border: 1px solid var(--border);
@@ -711,7 +712,7 @@
       display: block;
       width: 100%;
       border: 0;
-      padding: 0.08rem;
+      padding: 0.08rem 2.85rem 0.08rem 0.08rem;
       background: transparent;
       color: inherit;
       cursor: pointer;
@@ -727,27 +728,72 @@
       font-style: italic;
     }
 
-    .bookmark-card-actions {
-      display: flex;
-      gap: 0.45rem;
-      margin-top: 0.7rem;
-      border-top: 1px solid var(--border);
-      padding-top: 0.65rem;
+    .bookmark-menu {
+      position: absolute;
+      z-index: 8;
+      top: 0.56rem;
+      right: 0.56rem;
     }
 
-    .bookmark-card-action {
-      min-height: 2.35rem;
-      flex: 1 1 0;
+    .bookmark-menu > summary {
+      display: grid;
+      width: 2.35rem;
+      height: 2.35rem;
+      place-items: center;
       border: 1px solid var(--border);
-      border-radius: 0.58rem;
+      border-radius: 0.62rem;
       background: var(--button);
+      color: var(--text);
       cursor: pointer;
-      font-size: 0.8rem;
-      font-weight: 750;
+      font-size: 1.35rem;
+      font-weight: 800;
+      line-height: 1;
+      list-style: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    .bookmark-card-action.delete {
-      border-color: #6e3535;
+    .bookmark-menu > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .bookmark-menu[open] > summary {
+      background: var(--panel-soft);
+      box-shadow: inset 0 0 0 1px #686f7b;
+    }
+
+    .bookmark-menu-panel {
+      position: absolute;
+      top: calc(100% + 0.38rem);
+      right: 0;
+      display: grid;
+      min-width: 11.5rem;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 0.68rem;
+      padding: 0.32rem;
+      background: var(--panel);
+      box-shadow: 0 0.7rem 1.6rem rgba(0, 0, 0, 0.42);
+    }
+
+    .bookmark-menu-action {
+      min-height: 2.55rem;
+      border: 0;
+      border-radius: 0.48rem;
+      padding: 0.52rem 0.68rem;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.86rem;
+      font-weight: 720;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .bookmark-menu-action:active {
+      background: var(--panel-soft);
+    }
+
+    .bookmark-menu-action.delete {
       color: #f0b5b5;
     }
 
@@ -1614,6 +1660,79 @@
         : "↩ Return to reading position";
     }
 
+    function closeBookmarkMenus(except = null) {
+      document.querySelectorAll(".bookmark-menu[open]").forEach((menu) => {
+        if (menu !== except) {
+          menu.open = false;
+        }
+      });
+    }
+
+    function bookmarkDeleteLabel(type) {
+      if (type === "note") {
+        return "Delete note";
+      }
+      if (type === "highlight") {
+        return "Delete highlight";
+      }
+      return "Delete bookmark";
+    }
+
+    function createBookmarkMenu(item) {
+      const menu = document.createElement("details");
+      menu.className = "bookmark-menu";
+
+      const summary = document.createElement("summary");
+      summary.textContent = "⋯";
+      summary.setAttribute(
+        "aria-label",
+        "More actions for " + bookmarkTypeLabel(item.type)
+      );
+      summary.setAttribute("aria-haspopup", "menu");
+      menu.append(summary);
+
+      const panel = document.createElement("div");
+      panel.className = "bookmark-menu-panel";
+      panel.setAttribute("role", "menu");
+
+      if (item.can_edit_note) {
+        const edit = document.createElement("button");
+        edit.className = "bookmark-menu-action";
+        edit.type = "button";
+        edit.setAttribute("role", "menuitem");
+        edit.textContent = item.type === "note" ? "Edit note" : "Add note";
+        edit.addEventListener("click", (event) => {
+          event.preventDefault();
+          menu.open = false;
+          editBookmarkNote(item);
+        });
+        panel.append(edit);
+      }
+
+      if (item.can_delete) {
+        const remove = document.createElement("button");
+        remove.className = "bookmark-menu-action delete";
+        remove.type = "button";
+        remove.setAttribute("role", "menuitem");
+        remove.textContent = bookmarkDeleteLabel(item.type);
+        remove.addEventListener("click", (event) => {
+          event.preventDefault();
+          menu.open = false;
+          deleteBookmark(item);
+        });
+        panel.append(remove);
+      }
+
+      menu.addEventListener("toggle", () => {
+        if (menu.open) {
+          closeBookmarkMenus(menu);
+        }
+      });
+
+      menu.append(panel);
+      return menu;
+    }
+
     function createBookmarkCard(item) {
       const card = document.createElement("article");
       card.className = "bookmark-card";
@@ -1669,34 +1788,13 @@
       openLabel.className = "bookmark-open-label";
       openLabel.textContent = "Open on Kindle →";
       main.append(openLabel);
-      main.addEventListener("click", () => openBookmarkOnKindle(item));
+      main.addEventListener("click", () => {
+        closeBookmarkMenus();
+        openBookmarkOnKindle(item);
+      });
+
       card.append(main);
-
-      const actions = document.createElement("div");
-      actions.className = "bookmark-card-actions";
-
-      if (item.can_edit_note) {
-        const edit = document.createElement("button");
-        edit.className = "bookmark-card-action";
-        edit.type = "button";
-        edit.textContent = item.type === "note" ? "Edit note" : "Add note";
-        edit.addEventListener("click", () => editBookmarkNote(item));
-        actions.append(edit);
-      }
-
-      if (item.can_delete) {
-        const remove = document.createElement("button");
-        remove.className = "bookmark-card-action delete";
-        remove.type = "button";
-        remove.textContent = "Delete";
-        remove.addEventListener("click", () => deleteBookmark(item));
-        actions.append(remove);
-      }
-
-      if (actions.childElementCount > 0) {
-        card.append(actions);
-      }
-
+      card.append(createBookmarkMenu(item));
       return card;
     }
 
@@ -2435,6 +2533,12 @@
       setNoteMessage("Not pushed to Kindle yet");
     });
 
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".bookmark-menu")) {
+        closeBookmarkMenus();
+      }
+    });
+
     document.addEventListener("pointerdown", resetOledIdleTimer, {
       passive: true,
     });
@@ -2472,6 +2576,14 @@
       }
 
       resetOledIdleTimer();
+
+      if (
+        event.key === "Escape"
+        && document.querySelector(".bookmark-menu[open]")
+      ) {
+        closeBookmarkMenus();
+        return;
+      }
 
       if (
         event.key === "Escape"

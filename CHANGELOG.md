@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.8.6
+
+### Changed
+
+- Replaced the large bookmark-card action buttons with a compact `⋯` overflow menu.
+- Added contextual menu labels: **Delete bookmark**, **Delete highlight**, and **Delete note**.
+- Moved **Add note** and **Edit note** into the same overflow menu.
+- Only one annotation menu can remain open at a time.
+- Tapping elsewhere or pressing Escape closes the open menu.
+
+### Compatibility
+
+- Bookmark navigation, return-to-reading-position, search, sorting, note synchronization, deletion confirmation, footnote automation, OLED mode, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart remain unchanged.
+
 ## v0.8.5
 
 ### Added

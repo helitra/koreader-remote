@@ -158,7 +158,17 @@ jobs:
           grep -Fq '/api/v1/bookmarks/edit-note?id=' "${INDEX}"
           grep -Fq '/api/v1/bookmarks/delete?id=' "${INDEX}"
           grep -Fq 'font-style: italic' "${INDEX}"
+          grep -Fq 'className = "bookmark-menu"' "${INDEX}"
+          grep -Fq 'className = "bookmark-menu-panel"' "${INDEX}"
+          grep -Fq 'Delete bookmark' "${INDEX}"
+          grep -Fq 'Delete highlight' "${INDEX}"
+          grep -Fq 'Delete note' "${INDEX}"
+          grep -Fq 'closeBookmarkMenus' "${INDEX}"
           grep -Fq 'Open on Kindle' "${INDEX}"
+          if grep -Fq 'bookmark-card-actions' "${INDEX}"; then
+            echo "Large bookmark action rows must not be present."
+            exit 1
+          fi
           grep -Fq 'id="note-button"' "${INDEX}"
           grep -Fq 'id="footnote-button"' "${INDEX}"
           grep -Fq 'id="oled-button"' "${INDEX}"
@@ -280,6 +290,12 @@ jobs:
               '/api/v1/bookmarks/edit-note?id=',
               '/api/v1/bookmarks/delete?id=',
               'font-style: italic',
+              'className = "bookmark-menu"',
+              'className = "bookmark-menu-panel"',
+              'Delete bookmark',
+              'Delete highlight',
+              'Delete note',
+              'closeBookmarkMenus',
               'Open on Kindle',
               'id="note-button"',
               'id="footnote-button"',
@@ -301,6 +317,11 @@ jobs:
               raise SystemExit(
                   "Missing v0.8.0 UI markers: "
                   + ", ".join(missing_v080)
+              )
+
+          if "bookmark-card-actions" in index:
+              raise SystemExit(
+                  "Large bookmark action rows are not allowed."
               )
           PY
 
