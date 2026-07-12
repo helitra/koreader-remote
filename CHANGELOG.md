@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.1
+
+### Fixed
+
+- Fixed a reproducible KOReader crash after selecting **Write note on phone** on KOReader 2026.03.
+- Added compatibility with both KOReader highlight APIs: the direct `saveHighlight()` path used by KOReader 2026.03 and the optional `showHighlightPrompt()` callback used by other builds.
+- Added a protected execution boundary around remote-note highlight actions so an unexpected integration error shows a message instead of terminating KOReader.
+- Changed the selection-availability check to return a strict boolean.
+
+### Compatibility
+
+- OLED mode, footnote automation, the phone note editor, Pull/Push routes, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart are otherwise unchanged.
+
 ## v0.8.0
 
 ### Added

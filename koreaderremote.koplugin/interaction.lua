@@ -116,6 +116,71 @@ function Interaction:getCapabilities()
     }
 end
 
+function Interaction:showNoteActionError(err)
+    logger.err(
+        "KOReaderRemote: remote note action failed:",
+        tostring(err)
+    )
+
+    UIManager:show(InfoMessage:new{
+        text = _(
+            "The remote note could not be prepared.\n\n"
+            .. "KOReader Remote stayed active. Please try again after "
+            .. "reopening the book."
+        ),
+    })
+end
+
+function Interaction:runNoteAction(callback)
+    local ok, result = xpcall(callback, debug.traceback)
+
+    if not ok then
+        self:showNoteActionError(result)
+        return false
+    end
+
+    return result ~= false
+end
+
+function Interaction:startNewNoteSession(highlight)
+    local function startSavedNote(saved_index)
+        return self:runNoteAction(function()
+            if not saved_index then
+                UIManager:show(InfoMessage:new{
+                    text = _(
+                        "The selected text could not be saved as a highlight."
+                    ),
+                })
+                return false
+            end
+
+            return self:startNoteSession(highlight, saved_index)
+        end)
+    end
+
+    -- Older and development KOReader builds may still expose the optional
+    -- highlight prompt callback. KOReader 2026.03 saves highlights directly
+    -- and no longer exposes that method, so support both interfaces.
+    if type(highlight.showHighlightPrompt) == "function" then
+        highlight:showHighlightPrompt(function(saved_index)
+            startSavedNote(saved_index)
+        end)
+        return true
+    end
+
+    if type(highlight.saveHighlight) ~= "function" then
+        error("KOReader does not expose a compatible highlight save method.")
+    end
+
+    local saved_index = highlight:saveHighlight(true)
+
+    if type(highlight.onClose) == "function" then
+        highlight:onClose()
+    end
+
+    return startSavedNote(saved_index)
+end
+
 function Interaction:attachUI(ui)
     if not ui or not ui.highlight or not ui.highlight.addToHighlightDialog then
         return false
@@ -130,25 +195,29 @@ function Interaction:attachUI(ui)
     ui.highlight:addToHighlightDialog(
         HIGHLIGHT_ACTION_ID,
         function(highlight, index)
-            local has_selection = highlight.selected_text
-                and highlight.selected_text.pos0
-                and highlight.selected_text.pos1
+            local has_selection = highlight.selected_text ~= nil
+                and highlight.selected_text.pos0 ~= nil
+                and highlight.selected_text.pos1 ~= nil
 
             return {
                 text = index and _("Edit note on phone")
                     or _("Write note on phone"),
-                enabled = index ~= nil or has_selection ~= nil,
+                enabled = index ~= nil or has_selection,
                 callback = function()
-                    if index then
-                        bridge:startNoteSession(highlight, index)
-                        highlight:onClose(true)
-                        return
-                    end
+                    bridge:runNoteAction(function()
+                        if index then
+                            local started =
+                                bridge:startNoteSession(highlight, index)
 
-                    highlight:showHighlightPrompt(function(saved_index)
-                        if saved_index then
-                            bridge:startNoteSession(highlight, saved_index)
+                            if started
+                                and type(highlight.onClose) == "function" then
+                                highlight:onClose(true)
+                            end
+
+                            return started
                         end
+
+                        return bridge:startNewNoteSession(highlight)
                     end)
                 end,
             }
