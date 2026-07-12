@@ -1208,6 +1208,72 @@ function Interaction:editBookmarkNote(id)
     }
 end
 
+function Interaction:deleteBookmarkNote(id)
+    local ui, selected, index, selected_type, code, message =
+        self:resolveBookmark(id)
+
+    if not ui then
+        return false, code, message
+    end
+
+    if selected_type ~= "note" or selected.note == nil then
+        return false,
+            "NOTE_NOT_FOUND",
+            "This annotation does not contain a note."
+    end
+
+    if self.session and self.session.annotation == selected then
+        self:cancelNoteSession(
+            "note deleted from bookmarks",
+            true,
+            false
+        )
+    end
+
+    if ui.highlight
+        and type(ui.highlight.writePdfAnnotation) == "function" then
+        local pdf_ok, pdf_err = pcall(
+            ui.highlight.writePdfAnnotation,
+            ui.highlight,
+            "content",
+            selected,
+            ""
+        )
+
+        if not pdf_ok then
+            logger.warn(
+                "KOReaderRemote: could not clear PDF note content:",
+                pdf_err
+            )
+        end
+    end
+
+    selected.note = nil
+
+    if type(ui.handleEvent) == "function" then
+        ui:handleEvent(Event:new("AnnotationsModified", {
+            selected,
+            index_modified = index,
+            nb_highlights_added = 1,
+            nb_notes_added = -1,
+        }))
+    end
+
+    if ui.highlight
+        and ui.highlight.view
+        and ui.highlight.view.highlight
+        and ui.highlight.view.highlight.note_mark
+        and ui.highlight.dialog then
+        UIManager:setDirty(ui.highlight.dialog, "ui")
+    end
+
+    return true, {
+        action = "note_deleted",
+        type = "highlight",
+        return_position = self:getBookmarkReturnState(ui),
+    }
+end
+
 function Interaction:deleteBookmark(id)
     local ui, selected, index, selected_type, code, message =
         self:resolveBookmark(id)

@@ -97,13 +97,14 @@ The phone view can:
 - search chapter names, selected text, notes, page labels, and annotation types
 - sort in book order, newest first, oldest first, or by the most recently edited annotation
 - open an annotation on the Kindle
-- open a compact three-dot menu on every entry
-- add or edit a highlight note from that menu through the synchronized note editor
-- delete a bookmark, highlight, or note from that menu after confirmation
+- open a compact `...` menu on every entry
+- add or edit a highlight note through the synchronized note editor
+- remove only the note text while preserving the underlying highlight
+- delete the complete bookmark, including its highlight and attached note
 
 The first annotation jump captures the current reading position only once. You can then inspect any number of bookmarks and use **Return to reading position** to go directly back to where the excursion started. The return point remains available until it is used or the book is closed.
 
-Destructive and note-editing actions are kept behind the `⋯` menu so the annotation cards stay compact. The menu uses contextual labels such as **Delete bookmark**, **Delete highlight**, or **Delete note**.
+The `...` menu expands inside its annotation card so it cannot drift outside the card on narrow phone screens. A note entry contains **Edit Note**, **Delete Note**, and **Delete Bookmark**. **Delete Note** clears only the note text and keeps the highlight; **Delete Bookmark** removes the complete annotation.
 
 The list is refreshed when the tab opens or when the refresh button is pressed. Up to 300 entries are returned at once to keep the local web interface responsive.
 
@@ -338,6 +339,7 @@ GET /api/v1/bookmarks
 POST /api/v1/bookmarks/open?id=...
 POST /api/v1/bookmarks/return
 POST /api/v1/bookmarks/edit-note?id=...
+POST /api/v1/bookmarks/delete-note?id=...
 POST /api/v1/bookmarks/delete?id=...
 POST /api/v1/footnote/open
 POST /api/v1/note-session/push

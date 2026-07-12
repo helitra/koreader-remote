@@ -729,13 +729,15 @@
     }
 
     .bookmark-menu {
-      position: absolute;
-      z-index: 8;
-      top: 0.56rem;
-      right: 0.56rem;
+      position: static;
+      display: block;
+      width: 100%;
     }
 
     .bookmark-menu > summary {
+      position: absolute;
+      top: 0.56rem;
+      right: 0.56rem;
       display: grid;
       width: 2.35rem;
       height: 2.35rem;
@@ -745,8 +747,10 @@
       background: var(--button);
       color: var(--text);
       cursor: pointer;
-      font-size: 1.35rem;
-      font-weight: 800;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.92rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
       line-height: 1;
       list-style: none;
       -webkit-tap-highlight-color: transparent;
@@ -762,17 +766,16 @@
     }
 
     .bookmark-menu-panel {
-      position: absolute;
-      top: calc(100% + 0.38rem);
-      right: 0;
+      position: static;
       display: grid;
-      min-width: 11.5rem;
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 0.72rem;
       overflow: hidden;
       border: 1px solid var(--border);
       border-radius: 0.68rem;
       padding: 0.32rem;
-      background: var(--panel);
-      box-shadow: 0 0.7rem 1.6rem rgba(0, 0, 0, 0.42);
+      background: var(--panel-soft);
     }
 
     .bookmark-menu-action {
@@ -1668,14 +1671,26 @@
       });
     }
 
-    function bookmarkDeleteLabel(type) {
-      if (type === "note") {
-        return "Delete note";
-      }
-      if (type === "highlight") {
-        return "Delete highlight";
-      }
-      return "Delete bookmark";
+    function addBookmarkMenuAction(
+      panel,
+      menu,
+      label,
+      callback,
+      destructive = false
+    ) {
+      const action = document.createElement("button");
+      action.className = "bookmark-menu-action"
+        + (destructive ? " delete" : "");
+      action.type = "button";
+      action.setAttribute("role", "menuitem");
+      action.textContent = label;
+      action.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        menu.open = false;
+        callback();
+      });
+      panel.append(action);
     }
 
     function createBookmarkMenu(item) {
@@ -1683,7 +1698,7 @@
       menu.className = "bookmark-menu";
 
       const summary = document.createElement("summary");
-      summary.textContent = "⋯";
+      summary.textContent = "...";
       summary.setAttribute(
         "aria-label",
         "More actions for " + bookmarkTypeLabel(item.type)
@@ -1695,32 +1710,37 @@
       panel.className = "bookmark-menu-panel";
       panel.setAttribute("role", "menu");
 
-      if (item.can_edit_note) {
-        const edit = document.createElement("button");
-        edit.className = "bookmark-menu-action";
-        edit.type = "button";
-        edit.setAttribute("role", "menuitem");
-        edit.textContent = item.type === "note" ? "Edit note" : "Add note";
-        edit.addEventListener("click", (event) => {
-          event.preventDefault();
-          menu.open = false;
-          editBookmarkNote(item);
-        });
-        panel.append(edit);
+      if (item.type === "note") {
+        addBookmarkMenuAction(
+          panel,
+          menu,
+          "Edit Note",
+          () => editBookmarkNote(item)
+        );
+        addBookmarkMenuAction(
+          panel,
+          menu,
+          "Delete Note",
+          () => deleteBookmarkNote(item),
+          true
+        );
+      } else if (item.type === "highlight" && item.can_edit_note) {
+        addBookmarkMenuAction(
+          panel,
+          menu,
+          "Add Note",
+          () => editBookmarkNote(item)
+        );
       }
 
       if (item.can_delete) {
-        const remove = document.createElement("button");
-        remove.className = "bookmark-menu-action delete";
-        remove.type = "button";
-        remove.setAttribute("role", "menuitem");
-        remove.textContent = bookmarkDeleteLabel(item.type);
-        remove.addEventListener("click", (event) => {
-          event.preventDefault();
-          menu.open = false;
-          deleteBookmark(item);
-        });
-        panel.append(remove);
+        addBookmarkMenuAction(
+          panel,
+          menu,
+          "Delete Bookmark",
+          () => deleteBookmark(item),
+          true
+        );
       }
 
       menu.addEventListener("toggle", () => {
@@ -2007,10 +2027,52 @@
       }
     }
 
-    async function deleteBookmark(item) {
-      const type = bookmarkTypeLabel(item.type).toLocaleLowerCase();
+    async function deleteBookmarkNote(item) {
       const confirmed = window.confirm(
-        "Delete this " + type + " from KOReader?\n\n"
+        "Delete only the note text?\n\n"
+        + "The bookmark and highlighted text will remain."
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setBookmarkMessage("Deleting note…");
+
+      try {
+        const payload = await postJSON(
+          "/api/v1/bookmarks/delete-note?id="
+          + encodeURIComponent(item.id)
+        );
+
+        updateBookmarkReturn(payload.return_position);
+        setStatus("Note deleted; bookmark kept", true);
+        await loadBookmarks();
+
+        if (navigator.vibrate) {
+          navigator.vibrate(30);
+        }
+      } catch (error) {
+        const code = error.payload && error.payload.error;
+
+        if (code === "BOOKMARK_CHANGED") {
+          setBookmarkMessage(
+            "The bookmark list changed. Refresh it and try again.",
+            true
+          );
+        } else {
+          setBookmarkMessage(
+            error.message || "Could not delete the note",
+            true
+          );
+        }
+      }
+    }
+
+    async function deleteBookmark(item) {
+      const confirmed = window.confirm(
+        "Delete this complete bookmark from KOReader?\n\n"
+        + "Its highlight and attached note will also be removed. "
         + "This cannot be undone from the remote."
       );
 
@@ -2018,7 +2080,7 @@
         return;
       }
 
-      setBookmarkMessage("Deleting " + type + "…");
+      setBookmarkMessage("Deleting bookmark…");
 
       try {
         const payload = await postJSON(
@@ -2026,7 +2088,7 @@
         );
 
         updateBookmarkReturn(payload.return_position);
-        setStatus(bookmarkTypeLabel(item.type) + " deleted", true);
+        setStatus("Bookmark deleted", true);
         await loadBookmarks();
 
         if (navigator.vibrate) {

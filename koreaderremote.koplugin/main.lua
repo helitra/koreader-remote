@@ -1,4 +1,4 @@
--- KOReader Remote v0.8.6
+-- KOReader Remote v0.8.7
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,7 +11,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.8.6"
+local VERSION = "0.8.7"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
@@ -1694,6 +1694,42 @@ function Remote:onRequest(data, request_id)
                 ok = true,
                 action = result.action,
                 session = result.session,
+            },
+            true
+        )
+    end
+
+    if uri == "/api/v1/bookmarks/delete-note" then
+        if method ~= "POST" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use POST for this endpoint."
+            )
+        end
+
+        local ok, result, message =
+            runtime.interaction:deleteBookmarkNote(params.id)
+
+        if not ok then
+            local status = result == "MISSING_BOOKMARK" and 400 or 409
+            return self:sendControlError(
+                request_id,
+                status,
+                result,
+                message
+            )
+        end
+
+        return self:sendJSON(
+            request_id,
+            200,
+            {
+                ok = true,
+                action = result.action,
+                type = result.type,
+                return_position = result.return_position,
             },
             true
         )

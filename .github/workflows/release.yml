@@ -88,6 +88,7 @@ jobs:
           grep -Fq '/api/v1/bookmarks/open' "${MAIN}"
           grep -Fq '/api/v1/bookmarks/return' "${MAIN}"
           grep -Fq '/api/v1/bookmarks/edit-note' "${MAIN}"
+          grep -Fq '/api/v1/bookmarks/delete-note' "${MAIN}"
           grep -Fq '/api/v1/bookmarks/delete' "${MAIN}"
           grep -Fq '/api/v1/footnote/open' "${MAIN}"
           grep -Fq '<html lang="en">' "${INDEX}"
@@ -124,7 +125,10 @@ jobs:
           grep -Fq 'function Interaction:openBookmark(id)' "${INTERACTION}"
           grep -Fq 'function Interaction:returnToReadingPosition()' "${INTERACTION}"
           grep -Fq 'function Interaction:editBookmarkNote(id)' "${INTERACTION}"
+          grep -Fq 'function Interaction:deleteBookmarkNote(id)' "${INTERACTION}"
           grep -Fq 'function Interaction:deleteBookmark(id)' "${INTERACTION}"
+          grep -Fq 'nb_highlights_added = 1' "${INTERACTION}"
+          grep -Fq 'nb_notes_added = -1' "${INTERACTION}"
           grep -Fq 'instance.bookmark_return = nil' "${INTERACTION}"
           grep -Fq 'MAX_BOOKMARK_ITEMS = 300' "${INTERACTION}"
           grep -Fq 'ui.bookmark.gotoBookmark' "${INTERACTION}"
@@ -156,14 +160,22 @@ jobs:
           grep -Fq '/api/v1/bookmarks/open?id=' "${INDEX}"
           grep -Fq '/api/v1/bookmarks/return' "${INDEX}"
           grep -Fq '/api/v1/bookmarks/edit-note?id=' "${INDEX}"
+          grep -Fq '/api/v1/bookmarks/delete-note?id=' "${INDEX}"
           grep -Fq '/api/v1/bookmarks/delete?id=' "${INDEX}"
           grep -Fq 'font-style: italic' "${INDEX}"
           grep -Fq 'className = "bookmark-menu"' "${INDEX}"
           grep -Fq 'className = "bookmark-menu-panel"' "${INDEX}"
-          grep -Fq 'Delete bookmark' "${INDEX}"
-          grep -Fq 'Delete highlight' "${INDEX}"
-          grep -Fq 'Delete note' "${INDEX}"
+          grep -Fq 'summary.textContent = "..."' "${INDEX}"
+          grep -Fq '"Edit Note"' "${INDEX}"
+          grep -Fq '"Delete Note"' "${INDEX}"
+          grep -Fq '"Delete Bookmark"' "${INDEX}"
+          grep -Fq 'The bookmark and highlighted text will remain.' "${INDEX}"
+          grep -Fq 'position: static' "${INDEX}"
           grep -Fq 'closeBookmarkMenus' "${INDEX}"
+          if grep -Fq 'summary.textContent = "⋯"' "${INDEX}"; then
+            echo "Emoji-like ellipsis glyph must not be used."
+            exit 1
+          fi
           grep -Fq 'Open on Kindle' "${INDEX}"
           if grep -Fq 'bookmark-card-actions' "${INDEX}"; then
             echo "Large bookmark action rows must not be present."
@@ -288,13 +300,16 @@ jobs:
               '/api/v1/bookmarks/open?id=',
               '/api/v1/bookmarks/return',
               '/api/v1/bookmarks/edit-note?id=',
+              '/api/v1/bookmarks/delete-note?id=',
               '/api/v1/bookmarks/delete?id=',
               'font-style: italic',
               'className = "bookmark-menu"',
               'className = "bookmark-menu-panel"',
-              'Delete bookmark',
-              'Delete highlight',
-              'Delete note',
+              'summary.textContent = "..."',
+              '"Edit Note"',
+              '"Delete Note"',
+              '"Delete Bookmark"',
+              'The bookmark and highlighted text will remain.',
               'closeBookmarkMenus',
               'Open on Kindle',
               'id="note-button"',
@@ -322,6 +337,11 @@ jobs:
           if "bookmark-card-actions" in index:
               raise SystemExit(
                   "Large bookmark action rows are not allowed."
+              )
+
+          if 'summary.textContent = "⋯"' in index:
+              raise SystemExit(
+                  "The menu must use literal three dots, not an ellipsis glyph."
               )
           PY
 

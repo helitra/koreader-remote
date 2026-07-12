@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.8.7
+
+### Fixed
+
+- Fixed the annotation overflow menu being displaced or extending outside its card on narrow Safari layouts.
+- Replaced the single ellipsis glyph with the literal three characters `...`.
+- The menu now expands within the annotation card instead of floating over neighboring cards.
+- Fixed **Delete Note** deleting the entire annotation.
+
+### Changed
+
+- Note entries now contain **Edit Note**, **Delete Note**, and **Delete Bookmark**.
+- **Delete Note** removes only the note text and preserves the underlying highlight.
+- **Delete Bookmark** removes the complete annotation, including its highlight and attached note.
+- Highlight entries contain **Add Note** and **Delete Bookmark**.
+- Plain page bookmarks contain **Delete Bookmark**.
+- Added `POST /api/v1/bookmarks/delete-note?id=...`.
+
+### Compatibility
+
+- Bookmark navigation, return-to-reading-position, search, sorting, note synchronization, footnote automation, OLED mode, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart remain unchanged.
+
 ## v0.8.6
 
 ### Changed
