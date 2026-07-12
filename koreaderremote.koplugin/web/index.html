@@ -736,23 +736,25 @@
 
     .bookmark-menu > summary {
       position: absolute;
-      top: 0.56rem;
-      right: 0.56rem;
-      display: grid;
-      width: 2.35rem;
-      height: 2.35rem;
-      place-items: center;
-      border: 1px solid var(--border);
-      border-radius: 0.62rem;
-      background: var(--button);
-      color: var(--text);
+      top: 0.48rem;
+      right: 0.48rem;
+      display: flex;
+      width: 2.8rem;
+      height: 2.5rem;
+      align-items: center;
+      justify-content: center;
+      gap: 0.34rem;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
       cursor: pointer;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.92rem;
-      font-weight: 900;
-      letter-spacing: 0.08em;
-      line-height: 1;
       list-style: none;
+      outline: none;
+      box-shadow: none;
+      -webkit-appearance: none;
+      appearance: none;
       -webkit-tap-highlight-color: transparent;
     }
 
@@ -760,9 +762,23 @@
       display: none;
     }
 
-    .bookmark-menu[open] > summary {
-      background: var(--panel-soft);
-      box-shadow: inset 0 0 0 1px #686f7b;
+    .bookmark-menu-dot {
+      display: block;
+      width: 0.38rem;
+      height: 0.38rem;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--text);
+      opacity: 0.9;
+      pointer-events: none;
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    .bookmark-menu > summary:active .bookmark-menu-dot,
+    .bookmark-menu > summary:focus-visible .bookmark-menu-dot,
+    .bookmark-menu[open] > summary .bookmark-menu-dot {
+      opacity: 1;
+      transform: scale(1.12);
     }
 
     .bookmark-menu-panel {
@@ -1698,12 +1714,20 @@
       menu.className = "bookmark-menu";
 
       const summary = document.createElement("summary");
-      summary.textContent = "...";
       summary.setAttribute(
         "aria-label",
         "More actions for " + bookmarkTypeLabel(item.type)
       );
       summary.setAttribute("aria-haspopup", "menu");
+      summary.setAttribute("aria-expanded", "false");
+
+      for (let index = 0; index < 3; index += 1) {
+        const dot = document.createElement("span");
+        dot.className = "bookmark-menu-dot";
+        dot.setAttribute("aria-hidden", "true");
+        summary.append(dot);
+      }
+
       menu.append(summary);
 
       const panel = document.createElement("div");
@@ -1744,6 +1768,11 @@
       }
 
       menu.addEventListener("toggle", () => {
+        summary.setAttribute(
+          "aria-expanded",
+          menu.open ? "true" : "false"
+        );
+
         if (menu.open) {
           closeBookmarkMenus(menu);
         }

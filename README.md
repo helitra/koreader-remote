@@ -104,7 +104,9 @@ The phone view can:
 
 The first annotation jump captures the current reading position only once. You can then inspect any number of bookmarks and use **Return to reading position** to go directly back to where the excursion started. The return point remains available until it is used or the book is closed.
 
-The `...` menu expands inside its annotation card so it cannot drift outside the card on narrow phone screens. A note entry contains **Edit Note**, **Delete Note**, and **Delete Bookmark**. **Delete Note** clears only the note text and keeps the highlight; **Delete Bookmark** removes the complete annotation.
+The overflow trigger is drawn as three separate dots with no border, background, button frame, emoji, or font glyph. Its touch target remains large enough for Safari, while only the three dots are visible in the top-right corner. The menu itself expands inside its annotation card so it cannot drift outside the card on narrow phone screens.
+
+A note entry contains **Edit Note**, **Delete Note**, and **Delete Bookmark**. **Delete Note** clears only the note text and keeps the highlight; **Delete Bookmark** removes the complete annotation.
 
 The list is refreshed when the tab opens or when the refresh button is pressed. Up to 300 entries are returned at once to keep the local web interface responsive.
 

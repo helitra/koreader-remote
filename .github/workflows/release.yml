@@ -165,13 +165,21 @@ jobs:
           grep -Fq 'font-style: italic' "${INDEX}"
           grep -Fq 'className = "bookmark-menu"' "${INDEX}"
           grep -Fq 'className = "bookmark-menu-panel"' "${INDEX}"
-          grep -Fq 'summary.textContent = "..."' "${INDEX}"
+          grep -Fq 'className = "bookmark-menu-dot"' "${INDEX}"
+          grep -Fq 'index < 3' "${INDEX}"
+          grep -Fq 'aria-expanded' "${INDEX}"
+          grep -Fq 'background: transparent' "${INDEX}"
+          grep -Fq 'border: 0' "${INDEX}"
           grep -Fq '"Edit Note"' "${INDEX}"
           grep -Fq '"Delete Note"' "${INDEX}"
           grep -Fq '"Delete Bookmark"' "${INDEX}"
           grep -Fq 'The bookmark and highlighted text will remain.' "${INDEX}"
           grep -Fq 'position: static' "${INDEX}"
           grep -Fq 'closeBookmarkMenus' "${INDEX}"
+          if grep -Fq 'summary.textContent' "${INDEX}"; then
+            echo "The overflow trigger must use CSS dots, not text."
+            exit 1
+          fi
           if grep -Fq 'summary.textContent = "⋯"' "${INDEX}"; then
             echo "Emoji-like ellipsis glyph must not be used."
             exit 1
@@ -305,7 +313,11 @@ jobs:
               'font-style: italic',
               'className = "bookmark-menu"',
               'className = "bookmark-menu-panel"',
-              'summary.textContent = "..."',
+              'className = "bookmark-menu-dot"',
+              'index < 3',
+              'aria-expanded',
+              'background: transparent',
+              'border: 0',
               '"Edit Note"',
               '"Delete Note"',
               '"Delete Bookmark"',
@@ -339,9 +351,14 @@ jobs:
                   "Large bookmark action rows are not allowed."
               )
 
+          if "summary.textContent" in index:
+              raise SystemExit(
+                  "The menu trigger must use three CSS dots, not text."
+              )
+
           if 'summary.textContent = "⋯"' in index:
               raise SystemExit(
-                  "The menu must use literal three dots, not an ellipsis glyph."
+                  "The menu must not use an ellipsis glyph."
               )
           PY
 

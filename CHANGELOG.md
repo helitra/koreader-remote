@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.8.8
+
+### Fixed
+
+- Removed the bordered and filled button appearance from the annotation overflow trigger.
+- Removed the font-rendered `...` symbol that could resemble a gear or control icon in Safari.
+- The trigger now consists of three separate circular CSS dots, matching a native minimal overflow control.
+- Removed the open-state border, background, and inset shadow from the trigger.
+
+### Accessibility
+
+- Kept a larger invisible touch target around the three visible dots.
+- Added synchronized `aria-expanded` state while the menu opens and closes.
+- Keyboard focus and active feedback affect only the dots, without drawing a surrounding box.
+
+### Compatibility
+
+- The in-card action menu and its **Edit Note**, **Delete Note**, and **Delete Bookmark** behavior are unchanged.
+- Bookmark navigation, return-to-reading-position, search, sorting, note synchronization, footnote automation, OLED mode, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart remain unchanged.
+
 ## v0.8.7
 
 ### Fixed
