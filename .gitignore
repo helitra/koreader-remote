@@ -1,0 +1,16 @@
+# Build output
+dist/
+*.zip
+*.zip.sha256
+
+# Editors and operating systems
+.idea/
+.vscode/
+.directory
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.swp
+*.swo
+*~

@@ -1,0 +1,4 @@
+ CHANGELOG.md                     | 48 [32m+++++++++++++++++++++++++++++++++++++[m[31m-----------[m
+ RELEASE_NOTES.md                 | 33 [31m---------------------------------[m
+ koreaderremote.koplugin/main.lua |  4 [32m++[m[31m--[m
+ 3 files changed, 39 insertions(+), 46 deletions(-)

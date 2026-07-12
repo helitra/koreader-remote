@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a reproducible problem with KOReader Remote
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please include exact versions and a
+        short, reproducible sequence of steps.
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Kindle
+        - Kobo
+        - PocketBook
+        - Android
+        - Linux emulator/AppImage
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Exact device model
+      placeholder: Kindle Paperwhite 5, Kobo Libra 2, etc.
+    validations:
+      required: true
+
+  - type: input
+    id: koreader
+    attributes:
+      label: KOReader version
+      placeholder: "2026.03"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin
+    attributes:
+      label: KOReader Remote version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Tools → KOReader Remote
+        2. Start the server
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant crash.log lines
+      description: Remove private information before posting.
+      render: text

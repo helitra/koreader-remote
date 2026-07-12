@@ -1,0 +1,80 @@
+name: Compatibility test
+description: Report a structured test result from a device or platform
+title: "[Compatibility] "
+labels:
+  - compatibility
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Kindle
+        - Kobo
+        - PocketBook
+        - Android
+        - Linux emulator/AppImage
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Exact device model
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Device firmware
+      description: Write unknown when you cannot find it.
+    validations:
+      required: true
+
+  - type: input
+    id: koreader
+    attributes:
+      label: KOReader version
+    validations:
+      required: true
+
+  - type: input
+    id: plugin
+    attributes:
+      label: KOReader Remote version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: basic
+    attributes:
+      label: Basic tests
+      options:
+        - label: Plugin appears in Plugin Manager
+        - label: Tools → KOReader Remote appears
+        - label: Server starts
+        - label: IP address is detected
+        - label: QR code opens the website
+        - label: Previous page works
+        - label: Next page works
+        - label: Custom port works
+
+  - type: checkboxes
+    id: lifecycle
+    attributes:
+      label: Lifecycle tests
+      options:
+        - label: Autostart works after restarting KOReader
+        - label: Device enters standby normally
+        - label: Wi-Fi reconnects after wake
+        - label: Remote server becomes reachable again
+        - label: Pairing link shows the current IP
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Failures, observations and logs
+      description: Describe every unchecked or failed item.

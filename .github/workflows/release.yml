@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install release tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1 zip unzip
+
+      - name: Verify tag and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          EXPECTED_TAG="v${VERSION}"
+
+          if [[ "$GITHUB_REF_NAME" != "$EXPECTED_TAG" ]]; then
+            echo "Tag/version mismatch."
+            echo "Tag:      $GITHUB_REF_NAME"
+            echo "Expected: $EXPECTED_TAG"
+            exit 1
+          fi
+
+      - name: Validate source
+        run: bash scripts/check.sh
+
+      - name: Build release files
+        run: bash scripts/build-release.sh
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          TAG="v${VERSION}"
+          ARCHIVE="dist/koreaderremote-v${VERSION}.zip"
+          CHECKSUM="${ARCHIVE}.sha256"
+          EXTRA_ARGS=()
+
+          if [[ "$VERSION" == *-* ]]; then
+            EXTRA_ARGS+=(--prerelease)
+          fi
+
+          gh release create "$TAG"             "$ARCHIVE"             "$CHECKSUM"             --verify-tag             --title "KOReader Remote ${TAG}"             --notes-file RELEASE_NOTES.md             "${EXTRA_ARGS[@]}"
