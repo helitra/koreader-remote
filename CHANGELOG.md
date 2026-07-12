@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.7.0
+
+### Added
+
+- Added **Check for updates** to `Tools → KOReader Remote`.
+- Added a non-interactive menu row showing the currently running plugin version.
+- Added a manual, stable-release update check using the public GitHub Releases API.
+- Added confirmation before downloading and installing an available update.
+- Added automatic download of the exact plugin ZIP and its SHA-256 checksum.
+- Added redirect handling for GitHub release asset downloads.
+- Added SHA-256 verification with KOReader's bundled hashing implementation.
+- Added safe archive inspection and extraction through KOReader's bundled libarchive wrapper.
+- Added path-traversal, symlink, duplicate-path, file-count, and size checks.
+- Added Lua syntax validation before changing the installed plugin.
+- Added staged installation, a sibling backup directory, and immediate rollback when installation fails.
+- Added a KOReader restart prompt after a successful installation.
+- Added automatic cleanup of the previous-version backup after the updated plugin starts successfully.
+
+### Changed
+
+- Update checks happen only after an explicit user action. There is no background polling.
+- Stable GitHub releases are offered; drafts and pre-releases are not installed by this updater.
+- The remote server is stopped only after a downloaded update has passed all checks.
+- Choosing to restart later leaves the running old plugin session stopped until KOReader restarts.
+
+### Security
+
+- The updater accepts only release assets named `koreaderremote-vX.Y.Z.zip` and `koreaderremote-vX.Y.Z.zip.sha256`.
+- Every archive entry must stay inside `koreaderremote.koplugin/`.
+- Only regular files and directories are accepted.
+- The existing plugin is retained as `koreaderremote.koplugin.previous` until the new version starts successfully.
+
 ## v0.6.3
 
 ### Fixed

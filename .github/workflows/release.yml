@@ -39,6 +39,7 @@ jobs:
           PLUGIN="koreaderremote.koplugin"
           MAIN="${PLUGIN}/main.lua"
           CONTROLS="${PLUGIN}/devicecontrols.lua"
+          UPDATER="${PLUGIN}/updater.lua"
           INDEX="${PLUGIN}/web/index.html"
           LUAC="$(command -v luac5.1 || command -v luac)"
 
@@ -53,6 +54,7 @@ jobs:
           test -f "${PLUGIN}/_meta.lua"
           test -f "${MAIN}"
           test -f "${CONTROLS}"
+          test -f "${UPDATER}"
           test -f "${INDEX}"
 
           test ! -e RELEASE_NOTES.md
@@ -62,6 +64,7 @@ jobs:
           "${LUAC}" -p "${PLUGIN}/_meta.lua"
           "${LUAC}" -p "${MAIN}"
           "${LUAC}" -p "${CONTROLS}"
+          "${LUAC}" -p "${UPDATER}"
 
           grep -Fq "local VERSION = \"${VERSION}\"" "${MAIN}"
           grep -Fq "## v${VERSION}" CHANGELOG.md
@@ -90,6 +93,18 @@ jobs:
           grep -Fq 'applyDeviceState(payload.state, name)' "${INDEX}"
           grep -Fq 'self.requested_brightness = percent' "${CONTROLS}"
           grep -Fq 'state.brightness_effective = effective_brightness' "${CONTROLS}"
+          grep -Fq 'local Updater = dofile(PLUGIN_DIR .. "/updater.lua")' "${MAIN}"
+          grep -Fq 'text = _("Check for updates")' "${MAIN}"
+          grep -Fq 'Installed version: v%s' "${MAIN}"
+          grep -Fq 'api.github.com/repos/helitra/koreader-remote/releases/latest' "${UPDATER}"
+          grep -Fq 'instance.backup_dir = instance.plugin_dir .. ".previous"' "${UPDATER}"
+          grep -Fq 'local Archiver = require("ffi/archiver")' "${UPDATER}"
+          grep -Fq 'local sha256 = require("ffi/sha2").sha256' "${UPDATER}"
+          grep -Fq 'UIManager:askForRestart' "${UPDATER}"
+          grep -Fq 'NetworkMgr:runWhenOnline' "${UPDATER}"
+          grep -Fq 'function Updater:isRestartRequired()' "${UPDATER}"
+          grep -Fq 'currentProcessId()' "${UPDATER}"
+          grep -Fq 'runtime.update_restart_required' "${MAIN}"
 
           if grep -Fq 'type="range"' "${INDEX}"; then
             echo "The website must not contain sliders."
@@ -102,6 +117,7 @@ jobs:
           files = [
               Path("koreaderremote.koplugin/main.lua"),
               Path("koreaderremote.koplugin/devicecontrols.lua"),
+              Path("koreaderremote.koplugin/updater.lua"),
               Path("koreaderremote.koplugin/web/index.html"),
               Path("README.md"),
               Path("CHANGELOG.md"),

@@ -57,8 +57,12 @@ Controls appear only when KOReader reports that the current device supports them
 - KOReader night mode
 - Full-screen refresh
 
-### Pairing and reliability
+### Pairing, reliability, and updates
 
+- Manual update checks from the KOReader plugin menu
+- Confirmed download and installation of newer stable GitHub releases
+- SHA-256, archive-structure, and Lua-syntax checks before installation
+- Previous-version backup until the updated plugin starts successfully
 - Automatic local IPv4 detection
 - Full connection URL
 - QR-code pairing
@@ -257,6 +261,31 @@ POST /api/v1/full-refresh
 ```
 
 Brightness and warmth use a simple percentage scale. The plugin translates those values to the current device's native range.
+
+## 🔄 Plugin updates
+
+Open:
+
+```text
+Tools → KOReader Remote → Check for updates
+```
+
+The updater runs only after you select it. It does not check GitHub in the background.
+
+When a newer stable release is available, KOReader Remote shows the installed and available versions and asks for confirmation. After confirmation it:
+
+1. downloads the matching plugin ZIP and SHA-256 file from the GitHub release
+2. verifies the checksum
+3. checks every archive path and rejects links or files outside the plugin folder
+4. compiles every downloaded Lua file without executing it
+5. stops the remote server
+6. keeps the existing plugin as a backup
+7. installs the new version
+8. asks KOReader to restart
+
+The backup is removed only after the updated plugin starts successfully. Draft releases and pre-releases are ignored.
+
+A checksum downloaded from the same GitHub release detects damaged or mismatched downloads. It does not protect against a compromised project account.
 
 ## 🔐 Security notes
 

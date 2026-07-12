@@ -1,4 +1,4 @@
--- KOReader Remote v0.6.3
+-- KOReader Remote v0.7.0
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,7 +11,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.6.3"
+local VERSION = "0.7.0"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
@@ -19,6 +19,7 @@ local AUTOSTART_SETTINGS_KEY = "koreaderremote_autostart"
 local PLUGIN_DIR = DataStorage:getDataDir() .. "/plugins/koreaderremote.koplugin"
 local INDEX_FILE = PLUGIN_DIR .. "/web/index.html"
 local DeviceControls = dofile(PLUGIN_DIR .. "/devicecontrols.lua")
+local Updater = dofile(PLUGIN_DIR .. "/updater.lua")
 
 local STATE_STOPPED = "stopped"
 local STATE_WAITING = "waiting_for_wifi"
@@ -236,6 +237,28 @@ function Remote:init()
         }
     end
 
+    self.updater = Updater:new{
+        installed_version = VERSION,
+        plugin_dir = PLUGIN_DIR,
+        prepare_install = function()
+            return self:prepareForPluginUpdate()
+        end,
+        restore_after_failure = function(snapshot)
+            self:restoreAfterPluginUpdateFailure(snapshot)
+        end,
+    }
+
+    runtime.update_restart_required =
+        self.updater:isRestartRequired()
+
+    if not runtime.update_restart_required then
+        UIManager:nextTick(function()
+            if self.updater then
+                self.updater:finalizePendingInstall()
+            end
+        end)
+    end
+
     -- Keep one stable function reference so UIManager:unschedule() can remove
     -- it, while always dispatching to the newest plugin instance.
     if not runtime.retry_action then
@@ -264,6 +287,16 @@ function Remote:init()
 
     self.ui.menu:registerToMainMenu(self)
     logger.info("KOReaderRemote: plugin initialized, version", VERSION)
+
+    -- A plugin directory may already contain the new version while the old
+    -- KOReader process is still running. Do not start or finalize anything
+    -- until a real process restart has occurred.
+    if runtime.update_restart_required then
+        logger.info(
+            "KOReaderRemote: update installed; waiting for KOReader restart"
+        )
+        return
+    end
 
     -- A running server belongs to the KOReader process, not to one book or UI.
     if runtime.http_socket then
@@ -987,6 +1020,35 @@ function Remote:beginResumeRecovery()
     self:scheduleRetry()
 end
 
+function Remote:prepareForPluginUpdate()
+    local snapshot = {
+        request_origin = runtime.request_origin,
+        was_running = self:isRunning(),
+        manual_session = runtime.manual_session,
+        user_stopped = runtime.user_stopped,
+        update_restart_required = runtime.update_restart_required,
+    }
+
+    self:stop(false, false)
+    runtime.update_restart_required = true
+    return snapshot
+end
+
+function Remote:restoreAfterPluginUpdateFailure(snapshot)
+    snapshot = snapshot or {}
+    runtime.user_stopped = snapshot.user_stopped == true
+    runtime.update_restart_required =
+        snapshot.update_restart_required == true
+
+    if snapshot.was_running or snapshot.request_origin then
+        runtime.manual_session = snapshot.manual_session == true
+        self:requestStart(
+            true,
+            snapshot.request_origin or "manual"
+        )
+    end
+end
+
 function Remote:shutdownRuntime()
     self:stop(true, false)
     runtime.user_stopped = false
@@ -1544,6 +1606,24 @@ function Remote:addToMainMenu(menu_items)
                 text = _("Test connection"),
                 callback = function()
                     self:showConnectionTest()
+                end,
+            },
+            {
+                text = _("Check for updates"),
+                separator = true,
+                callback = function()
+                    self.updater:checkForUpdates()
+                end,
+            },
+            {
+                text_func = function()
+                    return string.format(
+                        _("Installed version: v%s"),
+                        VERSION
+                    )
+                end,
+                enabled_func = function()
+                    return false
                 end,
             },
             {
