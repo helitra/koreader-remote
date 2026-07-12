@@ -426,7 +426,7 @@
   <section id="top">
     <div id="status" role="status" data-online="false">Connecting…</div>
 
-    <details id="device-controls" open hidden>
+    <details id="device-controls" hidden>
       <summary>Device settings</summary>
 
       <div class="settings-body">
@@ -652,30 +652,6 @@
       button.textContent = enabled ? "On" : "Off";
     }
 
-    function readSettingsOpenPreference() {
-      try {
-        return localStorage.getItem("koreaderRemoteSettingsOpen") !== "false";
-      } catch (error) {
-        return true;
-      }
-    }
-
-    function saveSettingsOpenPreference() {
-      try {
-        localStorage.setItem(
-          "koreaderRemoteSettingsOpen",
-          deviceControlsElement.open ? "true" : "false"
-        );
-      } catch (error) {
-        console.debug("Could not store settings disclosure state:", error);
-      }
-    }
-
-    deviceControlsElement.addEventListener(
-      "toggle",
-      saveSettingsOpenPreference
-    );
-
     function updatePresetState(name) {
       document.querySelectorAll(
         '.preset-button[data-control="' + name + '"]'
@@ -727,7 +703,7 @@
         );
 
         if (control.queuedValue === null && payload && payload.state) {
-          applyDeviceState(payload.state);
+          applyDeviceState(payload.state, name);
         }
 
         setStatus("Connected", true);
@@ -797,24 +773,42 @@
       );
 
       deviceControlsElement.hidden = !hasControls;
-
-      if (hasControls) {
-        deviceControlsElement.open = readSettingsOpenPreference();
-      }
     }
 
-    function applyDeviceState(nextState) {
+    function controlIsBusy(name) {
+      const control = controls[name];
+
+      return Boolean(
+        control.sending
+        || control.queuedValue !== null
+        || (activeHold && activeHold.name === name)
+      );
+    }
+
+    function applyDeviceState(nextState, confirmedControl = null) {
       deviceState = nextState || {};
 
       if (typeof deviceState.frontlight_on === "boolean") {
         setToggle(frontlightToggle, deviceState.frontlight_on);
       }
 
-      if (typeof deviceState.brightness === "number") {
+      if (
+        typeof deviceState.brightness === "number"
+        && (
+          confirmedControl === "brightness"
+          || !controlIsBusy("brightness")
+        )
+      ) {
         applyLocalValue("brightness", deviceState.brightness);
       }
 
-      if (typeof deviceState.warmth === "number") {
+      if (
+        typeof deviceState.warmth === "number"
+        && (
+          confirmedControl === "warmth"
+          || !controlIsBusy("warmth")
+        )
+      ) {
         applyLocalValue("warmth", deviceState.warmth);
       }
 

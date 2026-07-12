@@ -117,10 +117,53 @@ function DeviceControls:getState()
             end
 
             state.frontlight_on = powerd:isFrontlightOn() == true
-            state.brightness = self:nativeBrightnessToPercent(
+
+            local effective_brightness = self:nativeBrightnessToPercent(
                 powerd,
                 native_brightness
             )
+            local displayed_brightness = effective_brightness
+            local requested_brightness = tonumber(
+                self.requested_brightness
+            )
+
+            if requested_brightness ~= nil then
+                requested_brightness = clamp(
+                    round(requested_brightness),
+                    0,
+                    100
+                )
+
+                local request_is_fresh =
+                    tonumber(self.requested_brightness_deadline) ~= nil
+                    and os.time() <= self.requested_brightness_deadline
+
+                local requested_matches_hardware = false
+
+                if requested_brightness == 0 then
+                    requested_matches_hardware =
+                        state.frontlight_on == false
+                else
+                    local requested_native =
+                        self:percentToNativeBrightness(
+                            powerd,
+                            requested_brightness
+                        )
+
+                    requested_matches_hardware =
+                        native_brightness == requested_native
+                end
+
+                if request_is_fresh or requested_matches_hardware then
+                    displayed_brightness = requested_brightness
+                else
+                    self.requested_brightness = nil
+                    self.requested_brightness_deadline = nil
+                end
+            end
+
+            state.brightness = displayed_brightness
+            state.brightness_effective = effective_brightness
             state.brightness_native = native_brightness
             state.brightness_native_min = tonumber(powerd.fl_min) or 0
             state.brightness_native_max = tonumber(powerd.fl_max) or 100
@@ -130,11 +173,37 @@ function DeviceControls:getState()
     if capabilities.warmth then
         local powerd = self:getPowerDevice()
         if powerd then
-            state.warmth = clamp(
+            local effective_warmth = clamp(
                 round(tonumber(powerd:frontlightWarmth()) or 0),
                 0,
                 100
             )
+            local displayed_warmth = effective_warmth
+            local requested_warmth = tonumber(self.requested_warmth)
+
+            if requested_warmth ~= nil then
+                requested_warmth = clamp(
+                    round(requested_warmth),
+                    0,
+                    100
+                )
+
+                local request_is_fresh =
+                    tonumber(self.requested_warmth_deadline) ~= nil
+                    and os.time() <= self.requested_warmth_deadline
+
+                if request_is_fresh
+                    or effective_warmth == requested_warmth
+                then
+                    displayed_warmth = requested_warmth
+                else
+                    self.requested_warmth = nil
+                    self.requested_warmth_deadline = nil
+                end
+            end
+
+            state.warmth = displayed_warmth
+            state.warmth_effective = effective_warmth
         end
     end
 
@@ -198,6 +267,9 @@ function DeviceControls:setBrightness(percent)
 
     percent = round(percent)
 
+    self.requested_brightness = percent
+    self.requested_brightness_deadline = os.time() + 3
+
     if percent == 0 then
         powerd:turnOffFrontlight()
     else
@@ -226,7 +298,11 @@ function DeviceControls:setWarmth(percent)
         return false, "DEVICE_UNAVAILABLE", "Warm-light controller is unavailable."
     end
 
-    powerd:setWarmth(round(percent))
+    percent = round(percent)
+    self.requested_warmth = percent
+    self.requested_warmth_deadline = os.time() + 3
+
+    powerd:setWarmth(percent)
     return true, self:getState()
 end
 

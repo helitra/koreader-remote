@@ -76,7 +76,7 @@ jobs:
           grep -Fq '/api/v1/night-mode' "${MAIN}"
           grep -Fq '/api/v1/full-refresh' "${MAIN}"
           grep -Fq '<html lang="en">' "${INDEX}"
-          grep -Fq '<details id="device-controls" open hidden>' "${INDEX}"
+          grep -Fq '<details id="device-controls" hidden>' "${INDEX}"
           grep -Fq '<summary>Device settings</summary>' "${INDEX}"
           grep -Fq 'aria-label="Previous page"' "${INDEX}"
           grep -Fq 'aria-label="Next page"' "${INDEX}"
@@ -86,9 +86,13 @@ jobs:
           grep -Fq 'data-control="warmth" data-value="100"' "${INDEX}"
           grep -Fq 'const HOLD_DELAY_MS = 500;' "${INDEX}"
           grep -Fq '{ until: Infinity, interval: 230 }' "${INDEX}"
+          grep -Fq 'function controlIsBusy(name)' "${INDEX}"
+          grep -Fq 'applyDeviceState(payload.state, name)' "${INDEX}"
+          grep -Fq 'self.requested_brightness = percent' "${CONTROLS}"
+          grep -Fq 'state.brightness_effective = effective_brightness' "${CONTROLS}"
 
           if grep -Fq 'type="range"' "${INDEX}"; then
-            echo "The v0.6.2 website must not contain sliders."
+            echo "The website must not contain sliders."
             exit 1
           fi
 
@@ -157,7 +161,12 @@ jobs:
                       )
 
           if 'type="range"' in index:
-              raise SystemExit("Sliders are not allowed in v0.6.2.")
+              raise SystemExit("Sliders are not allowed.")
+
+          if '<details id="device-controls" open' in index:
+              raise SystemExit(
+                  "Device settings must start collapsed."
+              )
 
           if "const HOLD_DELAY_MS = 500;" not in index:
               raise SystemExit("The hold delay must remain 500 ms.")
@@ -165,6 +174,16 @@ jobs:
           if "{ until: Infinity, interval: 230 }" not in index:
               raise SystemExit(
                   "The capped human repeat interval is missing."
+              )
+
+          if "function controlIsBusy(name)" not in index:
+              raise SystemExit(
+                  "Control request race protection is missing."
+              )
+
+          if "applyDeviceState(payload.state, name)" not in index:
+              raise SystemExit(
+                  "Confirmed control responses are not handled."
               )
           PY
 

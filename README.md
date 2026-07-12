@@ -73,7 +73,7 @@ Controls appear only when KOReader reports that the current device supports them
 
 The remote website is in English.
 
-**Device settings** appear at the top. The panel is open on the first visit and remembers whether you later leave it open or collapsed.
+**Device settings** appear at the top and start collapsed whenever the remote website is opened.
 
 Brightness presets:
 
@@ -87,7 +87,7 @@ Warmth presets:
 0% · 25% · 50% · 75% · 100%
 ```
 
-A normal minus or plus tap changes exactly one percentage point. Holding the button starts a gentle repeat after a short delay. Every repeated step still remains exactly one percentage point.
+A normal minus or plus tap changes exactly one percentage point. Holding the button starts a gentle repeat after a short delay. Every repeated step still remains exactly one percentage point. On readers with fewer native light levels, KOReader Remote keeps the selected percentage stable while the hardware uses the nearest supported level.
 
 The remaining screen is split into two large touch areas:
 

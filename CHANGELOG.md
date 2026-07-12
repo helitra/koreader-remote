@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.6.3
+
+### Fixed
+
+- Fixed brightness fine adjustment briefly changing and then snapping back to the previous percentage.
+- Fixed hold-to-repeat values being overwritten by device-state responses while an adjustment was still in progress.
+- Preserved the normalized percentage selected by the user when several percentages map to the same native front-light level.
+- Added a short synchronization grace period for readers whose light-state getter updates asynchronously.
+- Applied the same request synchronization protection to warmth adjustment.
+
+### Changed
+
+- Device settings now start collapsed whenever the remote website is opened.
+- Removed the saved expanded or collapsed panel preference.
+- The API now also reports effective hardware brightness and warmth values alongside the normalized displayed values.
+
+### Compatibility
+
+- Presets, fine-adjustment timing, page controls, API routes, pairing, autostart, sleep behavior, and QR-code behavior remain unchanged.
+
 ## v0.6.2
 
 ### Changed
