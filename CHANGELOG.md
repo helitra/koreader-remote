@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.6.1
+
+### Changed
+
+- Changed the complete phone website to English.
+- Moved the compact, collapsible device-settings panel to the top of the screen.
+- Made the previous-page and next-page controls fill all remaining screen space down to the phone's safe-area edge.
+- Kept the next-page control on the lower-right side for easier thumb access.
+- Increased the page-turn arrow size and improved touch, focus, and small-screen behavior.
+- Updated the README and automated validation for the new layout and language.
+
+### Compatibility
+
+- No API, server-lifecycle, pairing, device-control, or KOReader menu behavior changed.
+- All v0.6.0 device controls and all v0.5.0 reliability behavior remain available.
+
 ## v0.6.0
 
 ### Added

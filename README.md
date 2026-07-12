@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/f81e5089-8f5f-4a0a-93cc-433873eff57c
 ## Features
 
 - Turn one page forward or backward
-- Use a simple website in any modern phone browser
+- Use an English-language website in any modern phone browser
 - No phone app required
 - Automatically detect the reader's local IPv4 address
 - Show the full connection link and a QR code
@@ -118,20 +118,22 @@ Pairing is only a quick way to open the correct local link. It does not use a pa
 
 ## Using the remote
 
-The upper part of the website contains two large page buttons:
+The phone website is entirely in English.
 
-- Left side: previous page
-- Right side: next page
+A compact **Device settings** panel is placed at the top of the screen. It stays collapsed until you need it and contains only the controls supported by the current reader:
 
-You can also use the left and right arrow keys on a device with a keyboard.
-
-Open **Gerätesteuerung** below the page buttons to access the controls supported by the current reader:
-
-- Frontlight on or off
+- Front light on or off
 - Brightness
 - Warm-light level
 - KOReader night mode
 - Full-screen refresh
+
+The page-turn controls fill all remaining screen space down to the bottom safe-area edge:
+
+- Left half: previous page
+- Right half: next page
+
+This keeps the frequently used next-page control large and close to the lower-right thumb position. You can also use the left and right arrow keys on a device with a keyboard.
 
 Unsupported controls are not shown. The sliders wait briefly before sending a change so that moving them does not flood the reader with requests.
 
@@ -243,7 +245,7 @@ Example:
 ```json
 {
   "ok": true,
-  "version": "0.6.0",
+  "version": "0.6.1",
   "capabilities": {
     "page_turn": true,
     "frontlight": true,

@@ -75,6 +75,10 @@ jobs:
           grep -Fq '/api/v1/warmth' "${MAIN}"
           grep -Fq '/api/v1/night-mode' "${MAIN}"
           grep -Fq '/api/v1/full-refresh' "${MAIN}"
+          grep -Fq '<html lang="en">' "${INDEX}"
+          grep -Fq '<summary>Device settings</summary>' "${INDEX}"
+          grep -Fq 'aria-label="Previous page"' "${INDEX}"
+          grep -Fq 'aria-label="Next page"' "${INDEX}"
 
           python3 - <<'PY'
           from pathlib import Path
@@ -93,6 +97,37 @@ jobs:
                   raise SystemExit(f"Windows line endings found in {path}")
               if b"\x00" in data:
                   raise SystemExit(f"NUL byte found in {path}")
+
+          index = Path("koreaderremote.koplugin/web/index.html").read_text(
+              encoding="utf-8"
+          )
+
+          forbidden = [
+              "Gerätesteuerung",
+              "Vorherige Seite",
+              "Nächste Seite",
+              "Frontlicht",
+              "Helligkeit",
+              "Wärme",
+              "Nachtmodus",
+              "Vollständige Bildschirmaktualisierung",
+              "Verbinde",
+              "Verbunden",
+              "Buch auf dem Reader öffnen",
+          ]
+
+          found = [text for text in forbidden if text in index]
+          if found:
+              raise SystemExit(
+                  "German website text found: " + ", ".join(found)
+              )
+
+          settings_position = index.find('id="device-controls"')
+          remote_position = index.find('id="remote"')
+          if settings_position < 0 or remote_position < 0:
+              raise SystemExit("Remote layout elements are missing.")
+          if settings_position > remote_position:
+              raise SystemExit("Device settings must appear above page controls.")
           PY
 
       - name: Build release files and notes
