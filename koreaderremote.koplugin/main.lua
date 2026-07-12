@@ -1,4 +1,4 @@
--- KOReader Remote v0.7.0
+-- KOReader Remote v0.7.1
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,7 +11,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.7.0"
+local VERSION = "0.7.1"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"

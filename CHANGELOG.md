@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.7.1
+
+### Changed
+
+- Added the stable update channel to update-check results.
+- Added the plugin ZIP download size to the update confirmation.
+- Clarified that the currently installed plugin is backed up before installation.
+- Kept this release intentionally small so the complete v0.7.0 → v0.7.1 self-update path can be tested in isolation.
+
+### Compatibility
+
+- No server, web interface, device-control, pairing, autostart, sleep, QR-code, archive-validation, backup, rollback, or restart behavior changed.
+
 ## v0.7.0
 
 ### Added

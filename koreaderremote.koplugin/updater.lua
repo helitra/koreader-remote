@@ -57,6 +57,24 @@ local function trim(value)
     return tostring(value or ""):match("^%s*(.-)%s*$")
 end
 
+local function formatDownloadSize(bytes)
+    bytes = tonumber(bytes)
+
+    if not bytes or bytes <= 0 then
+        return "Unknown"
+    end
+
+    if bytes < 1024 then
+        return string.format("%d B", bytes)
+    end
+
+    if bytes < 1024 * 1024 then
+        return string.format("%.1f KiB", bytes / 1024)
+    end
+
+    return string.format("%.2f MiB", bytes / (1024 * 1024))
+end
+
 local function currentProcessId()
     local ok, pid = pcall(function()
         return tonumber(ffi.C.getpid())
@@ -474,6 +492,7 @@ function Updater:findReleaseAssets(release, version)
         checksum_name = checksum_name,
         archive_url = archive_asset.browser_download_url,
         checksum_url = checksum_asset.browser_download_url,
+        archive_size = tonumber(archive_asset.size),
     }
 end
 
@@ -573,7 +592,8 @@ function Updater:checkForUpdates()
                     _(
                         "KOReader Remote is up to date.\n\n"
                         .. "Installed version: v%s\n"
-                        .. "Latest version: v%s"
+                        .. "Latest release: v%s\n"
+                        .. "Update channel: Stable"
                     ),
                     self.installed_version,
                     candidate.version
@@ -587,7 +607,8 @@ function Updater:checkForUpdates()
                         "The installed version is newer than the latest "
                         .. "public release.\n\n"
                         .. "Installed version: v%s\n"
-                        .. "Latest release: v%s"
+                        .. "Latest release: v%s\n"
+                        .. "Update channel: Stable"
                     ),
                     self.installed_version,
                     candidate.version
@@ -600,11 +621,16 @@ function Updater:checkForUpdates()
                     _(
                         "A KOReader Remote update is available.\n\n"
                         .. "Installed version: v%s\n"
-                        .. "Available version: v%s\n\n"
+                        .. "Available version: v%s\n"
+                        .. "Update channel: Stable\n"
+                        .. "Download size: %s\n\n"
+                        .. "The current plugin will be backed up before "
+                        .. "installation.\n\n"
                         .. "Download and install the update?"
                     ),
                     self.installed_version,
-                    candidate.version
+                    candidate.version,
+                    formatDownloadSize(candidate.archive_size)
                 ),
                 ok_text = _("Update"),
                 ok_callback = function()
