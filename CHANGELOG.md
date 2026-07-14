@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.9.0
+
+### Added
+
+- Added Reading presets under a separate Device settings tab.
+- Added Day, Night, and Large text starter presets.
+- Presets can be edited for brightness, warmth, night mode, font size, top margin, bottom margin, and font weight.
+- Presets are saved in KOReader settings and can be applied from the phone browser.
+
+### Compatibility
+
+- Existing page controls, device settings, bookmarks, notes, footnotes, updater, pairing, sleep recovery, and autostart remain available.
+
 ## v0.8.10
 
 ### Changed

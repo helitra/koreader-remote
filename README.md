@@ -79,6 +79,10 @@ Controls appear only when KOReader reports that the current device supports them
 - URL and QR payload change only after a real IP or port change
 - Compact connection diagnostics inside KOReader
 
+### Reading presets
+
+Open **Device settings → Reading presets** in the phone browser to apply or edit the built-in **Day**, **Night**, and **Large text** profiles. Each profile stores brightness, warmth, night mode, font size, top margin, bottom margin, and font weight on the reader.
+
 ## 🔖 Current-book bookmarks
 
 The `🔖` toolbar button opens a separate list for the book that is currently open in KOReader.

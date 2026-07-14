@@ -41,6 +41,7 @@ jobs:
           CONTROLS="${PLUGIN}/devicecontrols.lua"
           INTERACTION="${PLUGIN}/interaction.lua"
           UPDATER="${PLUGIN}/updater.lua"
+          PRESETS="${PLUGIN}/readingpresets.lua"
           INDEX="${PLUGIN}/web/index.html"
           LUAC="$(command -v luac5.1 || command -v luac)"
 
@@ -57,6 +58,7 @@ jobs:
           test -f "${CONTROLS}"
           test -f "${INTERACTION}"
           test -f "${UPDATER}"
+          test -f "${PRESETS}"
           test -f "${INDEX}"
 
           test ! -e RELEASE_NOTES.md
@@ -68,6 +70,7 @@ jobs:
           "${LUAC}" -p "${CONTROLS}"
           "${LUAC}" -p "${INTERACTION}"
           "${LUAC}" -p "${UPDATER}"
+          "${LUAC}" -p "${PRESETS}"
 
           grep -Fq "local VERSION = \"${VERSION}\"" "${MAIN}"
           grep -Fq "## v${VERSION}" CHANGELOG.md
@@ -110,6 +113,8 @@ jobs:
           grep -Fq 'text = _("Check for updates")' "${MAIN}"
           grep -Fq 'Installed version: v%s' "${MAIN}"
           grep -Fq 'api.github.com/repos/helitra/koreader-remote/releases/latest' "${UPDATER}"
+          grep -Fq '/api/v1/reading-presets' "${MAIN}"
+          grep -Fq 'Reading presets' "${INDEX}"
           grep -Fq 'instance.backup_dir = instance.plugin_dir .. ".previous"' "${UPDATER}"
           grep -Fq 'local Archiver = require("ffi/archiver")' "${UPDATER}"
           grep -Fq 'local sha256 = require("ffi/sha2").sha256' "${UPDATER}"
@@ -228,6 +233,7 @@ jobs:
               Path("koreaderremote.koplugin/main.lua"),
               Path("koreaderremote.koplugin/devicecontrols.lua"),
               Path("koreaderremote.koplugin/interaction.lua"),
+              Path("koreaderremote.koplugin/readingpresets.lua"),
               Path("koreaderremote.koplugin/updater.lua"),
               Path("koreaderremote.koplugin/web/index.html"),
               Path("README.md"),
