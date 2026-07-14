@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.10
+
+### Changed
+
+- Displayed highlighted excerpts in the phone bookmarks view in italics, matching conventional quotation styling.
+- Applied the same italic styling to the selected book text shown above an attached note.
+- Kept the user's actual note text upright so the quotation and personal note remain visually distinct.
+- Preserved the existing italic chapter styling for plain page bookmarks.
+
+### Compatibility
+
+- Bookmark menus, navigation, return-to-reading-position, search, sorting, note synchronization, deletion behavior, footnote automation, OLED mode, page controls, device controls, updater behavior, pairing, sleep recovery, and autostart remain unchanged.
+
 ## v0.8.9
 
 ### Fixed

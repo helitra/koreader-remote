@@ -162,7 +162,10 @@ jobs:
           grep -Fq '/api/v1/bookmarks/edit-note?id=' "${INDEX}"
           grep -Fq '/api/v1/bookmarks/delete-note?id=' "${INDEX}"
           grep -Fq '/api/v1/bookmarks/delete?id=' "${INDEX}"
-          grep -Fq 'font-style: italic' "${INDEX}"
+          grep -Fq '.bookmark-excerpt {' "${INDEX}"
+          grep -Fq 'font-style: italic;' "${INDEX}"
+          grep -Fq '.bookmark-note {' "${INDEX}"
+          grep -Fq 'font-style: normal;' "${INDEX}"
           grep -Fq 'className = "bookmark-menu"' "${INDEX}"
           grep -Fq 'className = "bookmark-menu-panel"' "${INDEX}"
           grep -Fq 'className = "bookmark-menu-dot"' "${INDEX}"
@@ -322,7 +325,10 @@ jobs:
               '/api/v1/bookmarks/edit-note?id=',
               '/api/v1/bookmarks/delete-note?id=',
               '/api/v1/bookmarks/delete?id=',
-              'font-style: italic',
+              '.bookmark-excerpt {',
+              'font-style: italic;',
+              '.bookmark-note {',
+              'font-style: normal;',
               'className = "bookmark-menu"',
               'className = "bookmark-menu-panel"',
               'className = "bookmark-menu-dot"',
@@ -359,6 +365,30 @@ jobs:
               raise SystemExit(
                   "Missing v0.8.0 UI markers: "
                   + ", ".join(missing_v080)
+              )
+
+          excerpt_match = re.search(
+              r"\.bookmark-excerpt\s*\{(.*?)\n\s*\}",
+              index,
+              re.DOTALL,
+          )
+          if not excerpt_match:
+              raise SystemExit("Bookmark excerpt CSS block is missing.")
+          if "font-style: italic;" not in excerpt_match.group(1):
+              raise SystemExit(
+                  "Highlighted bookmark excerpts must be italic."
+              )
+
+          note_match = re.search(
+              r"\.bookmark-note\s*\{(.*?)\n\s*\}",
+              index,
+              re.DOTALL,
+          )
+          if not note_match:
+              raise SystemExit("Bookmark note CSS block is missing.")
+          if "font-style: normal;" not in note_match.group(1):
+              raise SystemExit(
+                  "Attached note text must remain upright."
               )
 
           if "bookmark-card-actions" in index:
