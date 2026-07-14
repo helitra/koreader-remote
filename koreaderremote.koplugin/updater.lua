@@ -49,7 +49,6 @@ local REQUIRED_FILES = {
     "_meta.lua",
     "devicecontrols.lua",
     "interaction.lua",
-    "readingpresets.lua",
     "main.lua",
     "updater.lua",
     "web/index.html",

@@ -1,4 +1,4 @@
--- KOReader Remote v0.9.0
+-- KOReader Remote v0.8.10
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,7 +11,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.9.0"
+local VERSION = "0.8.10"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
@@ -21,7 +21,6 @@ local INDEX_FILE = PLUGIN_DIR .. "/web/index.html"
 local DeviceControls = dofile(PLUGIN_DIR .. "/devicecontrols.lua")
 local Interaction = dofile(PLUGIN_DIR .. "/interaction.lua")
 local Updater = dofile(PLUGIN_DIR .. "/updater.lua")
-local ReadingPresets = dofile(PLUGIN_DIR .. "/readingpresets.lua")
 
 local STATE_STOPPED = "stopped"
 local STATE_WAITING = "waiting_for_wifi"
@@ -246,16 +245,6 @@ function Remote:init()
 
     if not runtime.device_controls then
         runtime.device_controls = DeviceControls:new{
-            get_ui = function()
-                local owner = runtime.owner
-                return owner and owner.ui or nil
-            end,
-        }
-    end
-
-    if not runtime.reading_presets then
-        runtime.reading_presets = ReadingPresets:new{
-            device_controls = runtime.device_controls,
             get_ui = function()
                 local owner = runtime.owner
                 return owner and owner.ui or nil
@@ -1443,38 +1432,6 @@ function Remote:onRequest(data, request_id)
             version = VERSION,
             state = controls:getState(),
         })
-    end
-
-    if uri == "/api/v1/reading-presets" then
-        if method == "GET" then
-            return self:sendJSON(request_id, 200, {
-                ok = true, state = runtime.reading_presets:getState(),
-            })
-        end
-        if method ~= "POST" then
-            return self:sendControlError(request_id, 405, "METHOD_NOT_ALLOWED", "Use GET or POST for this endpoint.")
-        end
-        local index = tonumber(params.index)
-        local preset = runtime.reading_presets.presets[index]
-        if not preset then
-            return self:sendControlError(request_id, 400, "MISSING_PRESET", "Preset not found.")
-        end
-        local values = {}
-        for key, value in pairs(preset) do values[key] = value end
-        for key, value in pairs(params) do
-            if key ~= "index" then values[key] = value end
-        end
-        if params.night_mode ~= nil then values.night_mode = parseBoolean(params.night_mode) end
-        local ok, result, message = runtime.reading_presets:update(index, values)
-        if not ok then return self:sendControlError(request_id, 400, result, message) end
-        return self:sendJSON(request_id, 200, { ok = true, state = runtime.reading_presets:getState(result) })
-    end
-
-    if uri == "/api/v1/reading-presets/apply" then
-        if method ~= "POST" then return self:sendControlError(request_id, 405, "METHOD_NOT_ALLOWED", "Use POST for this endpoint.") end
-        local ok, result, message = runtime.reading_presets:apply(params.index)
-        if not ok then return self:sendControlError(request_id, 400, result, message) end
-        return self:sendJSON(request_id, 200, { ok = true, action = "reading_preset_applied", state = result }, true)
     end
 
     if uri == "/api/v1/note-session" then

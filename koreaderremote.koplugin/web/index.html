@@ -82,16 +82,6 @@
       font: inherit;
     }
 
-    .settings-tabs { display: flex; gap: 0.45rem; padding: 0.55rem 0.72rem 0; }
-    .settings-tab { flex: 1; min-height: 2.7rem; border: 1px solid var(--border); border-radius: 0.55rem; background: var(--button); color: var(--muted); }
-    .settings-tab.active { background: var(--button-active); color: var(--text); }
-    #preset-list { display: grid; gap: 0.5rem; }
-    .reading-preset { display: flex; gap: 0.5rem; }
-    .reading-preset button { flex: 1; min-height: 2.7rem; }
-    .preset-editor { display: grid; gap: 0.55rem; margin-top: 0.8rem; }
-    .preset-editor label { display: flex; justify-content: space-between; align-items: center; gap: 1rem; color: var(--muted); }
-    .preset-editor input { width: 7rem; min-height: 2.3rem; padding: 0.3rem; border: 1px solid var(--border); border-radius: 0.35rem; background: var(--button); color: var(--text); }
-
     #top {
       z-index: 20;
       flex: 0 0 auto;
@@ -1021,12 +1011,7 @@
     <details id="device-controls" hidden>
       <summary>Device settings</summary>
 
-      <div class="settings-tabs" role="tablist">
-        <button class="settings-tab active" id="device-tab" type="button">Device</button>
-        <button class="settings-tab" id="reading-tab" type="button">Reading presets</button>
-      </div>
-
-      <div class="settings-body" id="device-settings-panel">
+      <div class="settings-body">
         <div class="setting-card">
           <div class="simple-row" id="frontlight-row" hidden>
             <span class="setting-label">Front light</span>
@@ -1100,23 +1085,6 @@
 
           <div id="full-refresh-row" hidden>
             <button id="full-refresh" type="button">Full screen refresh</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-body" id="reading-settings-panel" hidden>
-        <div class="setting-card">
-          <div id="preset-list"></div>
-          <div class="preset-editor" id="preset-editor" hidden>
-            <label>Name <input id="preset-name" type="text" maxlength="40"></label>
-            <label>Brightness <input id="preset-brightness" type="number" min="0" max="100"></label>
-            <label>Warmth <input id="preset-warmth" type="number" min="0" max="100"></label>
-            <label>Night mode <input id="preset-night" type="checkbox"></label>
-            <label>Font size <input id="preset-font-size" type="number" min="8" max="96"></label>
-            <label>Top margin <input id="preset-top-margin" type="number" min="0" max="200"></label>
-            <label>Bottom margin <input id="preset-bottom-margin" type="number" min="0" max="200"></label>
-            <label>Font weight <input id="preset-font-weight" type="number" min="100" max="900" step="100"></label>
-            <button id="preset-save" type="button">Save preset</button>
           </div>
         </div>
       </div>
@@ -1333,8 +1301,6 @@
     let bookmarkSortMode = "book";
     let bookmarkRequestRunning = false;
     let oledIdleTimer = null;
-    let readingPresets = [];
-    let selectedPreset = null;
 
     function clamp(value, minimum, maximum) {
       return Math.max(minimum, Math.min(maximum, value));
@@ -2331,40 +2297,6 @@
       deviceControlsElement.hidden = !hasControls;
     }
 
-    function showPresetEditor(index) {
-      const preset = readingPresets[index];
-      if (!preset) return;
-      selectedPreset = index;
-      document.getElementById("preset-editor").hidden = false;
-      document.getElementById("preset-name").value = preset.name;
-      document.getElementById("preset-brightness").value = preset.brightness;
-      document.getElementById("preset-warmth").value = preset.warmth;
-      document.getElementById("preset-night").checked = preset.night_mode;
-      document.getElementById("preset-font-size").value = preset.font_size;
-      document.getElementById("preset-top-margin").value = preset.top_margin;
-      document.getElementById("preset-bottom-margin").value = preset.bottom_margin;
-      document.getElementById("preset-font-weight").value = preset.font_weight;
-    }
-
-    function renderReadingPresets() {
-      const list = document.getElementById("preset-list");
-      list.innerHTML = "";
-      readingPresets.forEach((preset, index) => {
-        const row = document.createElement("div");
-        row.className = "reading-preset";
-        row.innerHTML = `<button type="button">${preset.name}</button><button type="button">Edit</button>`;
-        row.children[0].addEventListener("click", () => controlRequest(`/api/v1/reading-presets/apply?index=${index + 1}`, "Applying preset"));
-        row.children[1].addEventListener("click", () => showPresetEditor(index));
-        list.appendChild(row);
-      });
-    }
-
-    async function loadReadingPresets() {
-      const payload = await getJSON("/api/v1/reading-presets");
-      readingPresets = payload.state.presets || [];
-      renderReadingPresets();
-    }
-
     function controlIsBusy(name) {
       const control = controls[name];
 
@@ -2427,7 +2359,6 @@
         }
 
         await loadDeviceState();
-        await loadReadingPresets();
         loadNoteSession(false);
 
         if (info.document_open === false) {
@@ -2727,42 +2658,6 @@
       .addEventListener("click", () => {
         controlRequest("/api/v1/full-refresh", "Screen refresh");
       });
-
-    document.getElementById("device-tab").addEventListener("click", () => {
-      document.getElementById("device-tab").classList.add("active");
-      document.getElementById("reading-tab").classList.remove("active");
-      document.getElementById("device-settings-panel").hidden = false;
-      document.getElementById("reading-settings-panel").hidden = true;
-    });
-    document.getElementById("reading-tab").addEventListener("click", () => {
-      document.getElementById("reading-tab").classList.add("active");
-      document.getElementById("device-tab").classList.remove("active");
-      document.getElementById("device-settings-panel").hidden = true;
-      document.getElementById("reading-settings-panel").hidden = false;
-      loadReadingPresets();
-    });
-    document.getElementById("preset-save").addEventListener("click", async () => {
-      if (selectedPreset === null) return;
-      const params = new URLSearchParams({
-        index: String(selectedPreset + 1),
-        name: document.getElementById("preset-name").value,
-        brightness: document.getElementById("preset-brightness").value,
-        warmth: document.getElementById("preset-warmth").value,
-        night_mode: String(document.getElementById("preset-night").checked),
-        font_size: document.getElementById("preset-font-size").value,
-        top_margin: document.getElementById("preset-top-margin").value,
-        bottom_margin: document.getElementById("preset-bottom-margin").value,
-        font_weight: document.getElementById("preset-font-weight").value,
-      });
-      try {
-        const payload = await postJSON("/api/v1/reading-presets?" + params);
-        readingPresets = payload.state.presets || readingPresets;
-        renderReadingPresets();
-        setStatus("Preset saved", true);
-      } catch (error) {
-        setStatus(error.message || "Preset failed", false);
-      }
-    });
 
     document.addEventListener("keydown", (event) => {
       if (
