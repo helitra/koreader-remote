@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.11
+
+### Fixed
+
+- Continued checking for Wi-Fi after the initial recovery retry window instead of relying only on a possibly missing `NetworkConnected` event.
+- Accepted a usable local IPv4 address during the short period when KOReader's cached network state still reports disconnected.
+- Restored manually started remote sessions after long standby periods.
+
+### Compatibility
+
+- Existing page controls, device settings, bookmarks, notes, footnotes, OLED mode, updater, pairing, and autostart remain available.
+
 ## v0.8.10
 
 ### Changed

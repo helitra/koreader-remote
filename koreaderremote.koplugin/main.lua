@@ -1,4 +1,4 @@
--- KOReader Remote v0.8.10
+-- KOReader Remote v0.8.11
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,7 +11,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.8.10"
+local VERSION = "0.8.11"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
@@ -29,10 +29,11 @@ local STATE_RUNNING = "running"
 local STATE_RETRYING = "retrying"
 local STATE_ERROR = "error"
 
--- Covers KOReader's potentially slow Wi-Fi restore window without retrying
--- forever. A later NetworkConnected event can still recover after this list.
+-- Keep checking until KOReader reports a usable network or the user stops the
+-- remote. Some Kindle/KOReader combinations do not emit NetworkConnected
+-- after a long standby.
 local RETRY_DELAYS = { 2, 5, 10, 20, 30 }
-local MANUAL_SLEEP_GRACE_SECONDS = 5 * 60
+local RECOVERY_RETRY_SECONDS = 15
 
 local HTTP_STATUS = {
     [200] = "OK",
@@ -447,14 +448,9 @@ function Remote:scheduleRetry()
         return false
     end
 
-    if runtime.retry_index >= #RETRY_DELAYS then
-        self:setState(STATE_WAITING)
-        logger.info("KOReaderRemote: retry window exhausted; waiting for NetworkConnected")
-        return false
-    end
-
     runtime.retry_index = runtime.retry_index + 1
     local delay = RETRY_DELAYS[runtime.retry_index]
+        or RECOVERY_RETRY_SECONDS
 
     runtime.retry_scheduled = true
 
@@ -574,7 +570,9 @@ function Remote:isNetworkReady()
 
     local ip = self:detectLocalIP()
 
-    if state_ok and connected == false then
+    -- A valid address is stronger evidence than KOReader's cached boolean,
+    -- which can remain false briefly after a long suspend.
+    if state_ok and connected == false and ip == nil then
         return false, nil
     end
 
@@ -1023,8 +1021,7 @@ function Remote:beginResumeRecovery()
     runtime.sleeping = false
 
     local should_restart = (runtime.autostart and not runtime.user_stopped)
-        or (runtime.manual_session
-            and slept_for <= MANUAL_SLEEP_GRACE_SECONDS)
+        or runtime.manual_session
 
     if not should_restart then
         runtime.request_origin = nil
@@ -1032,7 +1029,7 @@ function Remote:beginResumeRecovery()
         runtime.network_ready = false
         self:setState(STATE_STOPPED)
         logger.info(
-            "KOReaderRemote: manual session expired after sleep",
+            "KOReaderRemote: no session to recover after sleep",
             slept_for,
             "seconds"
         )
@@ -1351,7 +1348,7 @@ function Remote:onRequest(data, request_id)
             ip = runtime.local_ip,
             url = runtime.connection_url,
             url_revision = runtime.connection_revision,
-            manual_sleep_grace_seconds = MANUAL_SLEEP_GRACE_SECONDS,
+            recovery_retry_seconds = RECOVERY_RETRY_SECONDS,
             note_session_active = runtime.interaction
                 and runtime.interaction:getNoteSessionState().active
                 or false,
@@ -1976,9 +1973,8 @@ function Remote:getMenuStatusText()
         return _("Waiting for Wi-Fi…")
     elseif runtime.state == STATE_RETRYING then
         return string.format(
-            _("Retrying connection (%d/%d)…"),
-            runtime.retry_index,
-            #RETRY_DELAYS
+            _("Retrying connection (%d)…"),
+            runtime.retry_index
         )
     elseif runtime.state == STATE_STARTING then
         return _("Starting remote server…")
