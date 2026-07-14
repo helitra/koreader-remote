@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.12
+
+### Fixed
+
+- Made OLED idle dimming fade smoothly over eight seconds instead of changing brightness abruptly.
+
 ## v0.8.11
 
 ### Fixed
