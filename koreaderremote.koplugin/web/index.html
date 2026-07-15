@@ -420,23 +420,6 @@
       background: #000000;
     }
 
-    body.oled-idle .page-arrow,
-    body.oled-idle .page-label,
-    body.oled-idle #status,
-    body.oled-idle #device-controls,
-    body.oled-idle .icon-button {
-      opacity: 0.16;
-    }
-
-    /* Let OLED idle dimming settle gradually so reading is not interrupted. */
-    .page-arrow,
-    .page-label,
-    #status,
-    #device-controls,
-    .icon-button {
-      transition: opacity 8s linear;
-    }
-
     #note-view,
     #bookmark-view {
       display: flex;
@@ -1217,7 +1200,6 @@
     const HOLD_DELAY_MS = 500;
     const SEND_DELAY_MS = 170;
     const NOTE_POLL_MS = 1800;
-    const OLED_IDLE_MS = 30000;
     const OLED_STORAGE_KEY = "koreaderRemoteOledMode";
     const PAIRING_TOKEN_KEY = "koreaderRemotePairingToken";
     const REPEAT_PHASES = [
@@ -1310,7 +1292,6 @@
     let bookmarkQuery = "";
     let bookmarkSortMode = "book";
     let bookmarkRequestRunning = false;
-    let oledIdleTimer = null;
     let pairingToken = localStorage.getItem(PAIRING_TOKEN_KEY);
     let pairingPromptShown = false;
 
@@ -1449,23 +1430,6 @@
         console.debug("Could not store OLED preference:", error);
       }
 
-      resetOledIdleTimer();
-    }
-
-    function resetOledIdleTimer() {
-      document.body.classList.remove("oled-idle");
-      window.clearTimeout(oledIdleTimer);
-
-      if (document.documentElement.dataset.oled === "true") {
-        oledIdleTimer = window.setTimeout(() => {
-          if (
-            !document.body.classList.contains("note-open")
-            && !document.body.classList.contains("bookmark-open")
-          ) {
-            document.body.classList.add("oled-idle");
-          }
-        }, OLED_IDLE_MS);
-      }
     }
 
     function setNoteMessage(text, error = false) {
@@ -1563,14 +1527,12 @@
     async function openNoteView() {
       document.body.classList.add("note-open");
       noteView.hidden = false;
-      resetOledIdleTimer();
       await loadNoteSession(false);
     }
 
     function closeNoteView() {
       document.body.classList.remove("note-open");
       noteView.hidden = true;
-      resetOledIdleTimer();
     }
 
     async function pullNote() {
@@ -2107,7 +2069,6 @@
             ? "Note opened from bookmarks"
             : "Ready to add a note to this highlight"
         );
-        resetOledIdleTimer();
       } catch (error) {
         setBookmarkMessage(
           error.message || "Could not open the note editor",
@@ -2204,14 +2165,12 @@
       closeNoteView();
       document.body.classList.add("bookmark-open");
       bookmarkView.hidden = false;
-      resetOledIdleTimer();
       await loadBookmarks();
     }
 
     function closeBookmarkView() {
       document.body.classList.remove("bookmark-open");
       bookmarkView.hidden = true;
-      resetOledIdleTimer();
     }
 
     function setBookmarkFilter(filter) {
@@ -2698,10 +2657,6 @@
       }
     });
 
-    document.addEventListener("pointerdown", resetOledIdleTimer, {
-      passive: true,
-    });
-
     document.getElementById("previous")
       .addEventListener("click", previousPage);
 
@@ -2733,8 +2688,6 @@
       ) {
         return;
       }
-
-      resetOledIdleTimer();
 
       if (
         event.key === "Escape"

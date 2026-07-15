@@ -73,7 +73,7 @@ only a convenient address share unless you enable paired-device protection.
 - Open the next detected EPUB footnote from the current page
 - Browse, search, sort, and jump to bookmarks, highlights, and notes
 - Return to the reading position after inspecting annotations
-- Optional pure-black OLED mode with inactivity dimming
+- Optional pure-black OLED mode
 
 ### Control supported devices
 

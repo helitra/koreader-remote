@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.1
+
+### Changed
+
+- Removed automatic OLED inactivity dimming; OLED mode now stays at its normal
+  brightness until the user changes or disables it.
+
 ## v0.9.0
 
 ### Added
