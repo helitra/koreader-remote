@@ -59,6 +59,26 @@ local Remote = WidgetContainer:extend{
 local RUNTIME_KEY = "koreaderremote.runtime.v1"
 local runtime = package.loaded[RUNTIME_KEY]
 
+local function registerWithPluginHub()
+    -- PluginHub is optional, so KOReader Remote remains standalone.
+    local ok, pluginhub = pcall(require, "pluginhub/api")
+    if not ok or type(pluginhub.register) ~= "function" then
+        return
+    end
+
+    pluginhub.register({
+        schema = 1,
+        id = "koreaderremote",
+        name = "KOReader Remote",
+        version = VERSION,
+        repository = "helitra/koreader-remote",
+        update = {
+            provider = "github-releases",
+            asset_pattern = "koreaderremote-v%s.zip",
+        },
+    })
+end
+
 if type(runtime) ~= "table" then
     runtime = {
         owner = nil,
@@ -238,6 +258,7 @@ local function parseBoolean(value)
 end
 
 function Remote:init()
+    registerWithPluginHub()
     self.port = tonumber(G_reader_settings:readSetting(PORT_SETTINGS_KEY))
         or DEFAULT_PORT
     runtime.autostart = G_reader_settings:isTrue(AUTOSTART_SETTINGS_KEY)

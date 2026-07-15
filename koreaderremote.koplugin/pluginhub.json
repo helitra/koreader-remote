@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "koreaderremote",
+  "name": "KOReader Remote",
+  "version": "0.8.12",
+  "update": {
+    "provider": "github-releases",
+    "repository": "helitra/koreader-remote",
+    "asset_pattern": "koreaderremote-v%s.zip"
+  }
+}
