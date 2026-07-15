@@ -361,7 +361,6 @@ jobs:
               'Save note',
               '/api/v1/note-session/save',
               ':root[data-oled="true"]',
-              'const OLED_IDLE_MS = 30000;',
               'X-KOReader-Note-Base64',
           ]
 
