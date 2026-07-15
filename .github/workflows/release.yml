@@ -216,7 +216,10 @@ jobs:
           grep -Fq 'Save note' "${INDEX}"
           grep -Fq '/api/v1/note-session/save' "${INDEX}"
           grep -Fq ':root[data-oled="true"]' "${INDEX}"
-          grep -Fq 'const OLED_IDLE_MS = 30000;' "${INDEX}"
+          if grep -Fq 'const OLED_IDLE_MS = 30000;' "${INDEX}"; then
+            echo "OLED idle dimming must remain removed."
+            exit 1
+          fi
           grep -Fq 'X-KOReader-Note-Base64' "${INDEX}"
 
           if grep -Fq 'type="range"' "${INDEX}"; then
