@@ -71,9 +71,9 @@ local function registerWithPluginHub()
         id = "koreaderremote",
         name = "KOReader Remote",
         version = VERSION,
-        repository = "helitra/koreader-remote",
         update = {
             provider = "github-releases",
+            repository = "helitra/koreader-remote",
             asset_pattern = "koreaderremote-v%s.zip",
         },
     })
