@@ -1,6 +1,7 @@
 -- KOReader Remote self-updater.
 --
--- Checks the latest stable GitHub release only after an explicit user action.
+-- Checks the selected GitHub release channel only after an explicit user
+-- action.
 -- Downloads the plugin ZIP and checksum, validates the archive with KOReader's
 -- bundled libarchive wrapper, installs through a sibling staging directory,
 -- and preserves the previous plugin directory until the new version starts.
@@ -30,8 +31,10 @@ require("ffi/posix_h")
 local Updater = {}
 Updater.__index = Updater
 
-local GITHUB_API_URL =
+local GITHUB_STABLE_API_URL =
     "https://api.github.com/repos/helitra/koreader-remote/releases/latest"
+local GITHUB_BETA_API_URL =
+    "https://api.github.com/repos/helitra/koreader-remote/releases?per_page=30"
 local PLUGIN_FOLDER_NAME = "koreaderremote.koplugin"
 local UPDATE_WORK_DIR =
     DataStorage:getDataDir() .. "/koreaderremote-update"
@@ -47,6 +50,7 @@ local MAX_SINGLE_FILE_BYTES = 5 * 1024 * 1024
 
 local REQUIRED_FILES = {
     "_meta.lua",
+    "build.lua",
     "devicecontrols.lua",
     "interaction.lua",
     "main.lua",
@@ -93,17 +97,24 @@ local function parsePendingMarker(content)
         return nil
     end
 
-    local version, process_id = content:match(
-        "^%s*(%d+%.%d+%.%d+)%s*\n%s*([^%s]+)"
-    )
+    local lines = {}
+    for line in content:gmatch("[^\r\n]+") do
+        lines[#lines + 1] = trim(line)
+    end
 
-    if not version then
+    local version = lines[1]
+    local process_id = lines[2]
+
+    if not version or not version:match("^%d+%.%d+%.%d+$") then
         return nil
     end
 
     return {
         version = version,
         process_id = process_id or "unknown",
+        channel = lines[3],
+        build_id = lines[4],
+        commit = lines[5],
     }
 end
 
@@ -438,6 +449,14 @@ function Updater:new(options)
 
     local instance = setmetatable({}, self)
     instance.installed_version = assert(options.installed_version)
+    instance.installed_channel = options.installed_channel == "beta"
+        and "beta"
+        or "stable"
+    instance.installed_release_version = options.installed_release_version
+        or instance.installed_version
+    instance.installed_build_id = options.installed_build_id or "source"
+    instance.installed_commit = options.installed_commit or "unknown"
+    instance.channel = options.channel == "beta" and "beta" or "stable"
     instance.plugin_dir = assert(options.plugin_dir)
     instance.prepare_install = options.prepare_install
     instance.restore_after_failure = options.restore_after_failure
@@ -452,8 +471,49 @@ function Updater:getInstalledVersion()
     return self.installed_version
 end
 
-function Updater:findReleaseAssets(release, version)
-    local archive_name = "koreaderremote-v" .. version .. ".zip"
+function Updater:getChannel()
+    return self.channel
+end
+
+function Updater:setChannel(channel)
+    self.channel = channel == "beta" and "beta" or "stable"
+end
+
+function Updater:getChannelLabel()
+    return self.channel == "beta"
+        and _("Beta (dev)")
+        or _("Stable (main)")
+end
+
+function Updater:getInstalledBuildInfo()
+    return {
+        channel = self.installed_channel,
+        source = self.installed_channel == "beta" and "dev" or "main",
+        version = self.installed_version,
+        release_version = self.installed_release_version,
+        build_id = self.installed_build_id,
+        commit = self.installed_commit,
+    }
+end
+
+function Updater:getInstalledBuildLabel()
+    local commit = tostring(self.installed_commit or "unknown")
+    if #commit > 7 then
+        commit = commit:sub(1, 7)
+    end
+
+    return string.format(
+        _("%s v%s (%s, %s, commit %s)"),
+        self.installed_channel == "beta" and _("Beta") or _("Stable"),
+        self.installed_release_version,
+        self.installed_channel == "beta" and _("dev") or _("main"),
+        self.installed_build_id,
+        commit
+    )
+end
+
+function Updater:findReleaseAssets(release, release_version)
+    local archive_name = "koreaderremote-v" .. release_version .. ".zip"
     local checksum_name = archive_name .. ".sha256"
     local archive_asset
     local checksum_asset
@@ -468,8 +528,8 @@ function Updater:findReleaseAssets(release, version)
 
     if not archive_asset or not checksum_asset then
         return nil, string.format(
-            "The v%s release is missing its plugin ZIP or checksum.",
-            version
+            "The %s release is missing its plugin ZIP or checksum.",
+            release.tag_name or release_version
         )
     end
 
@@ -497,9 +557,154 @@ function Updater:findReleaseAssets(release, version)
     }
 end
 
+function Updater:readBuildMetadata(path)
+    local content, err = readFile(path)
+    if not content then
+        return nil, "Could not read build metadata: " .. tostring(err)
+    end
+
+    local metadata = {
+        channel = content:match('channel%s*=%s*"([%a]+)"'),
+        source = content:match('source%s*=%s*"([%a]+)"'),
+        version = content:match(
+            'version%s*=%s*"(%d+%.%d+%.%d+)"'
+        ),
+        release_version = content:match(
+            'release_version%s*=%s*"([%d%.%-a-zA-Z]+)"'
+        ),
+        build_id = content:match('build_id%s*=%s*"([^"\r\n]+)"'),
+        commit = content:match('commit%s*=%s*"([^"\r\n]+)"'),
+    }
+
+    if metadata.channel ~= "stable" and metadata.channel ~= "beta" then
+        return nil, "The update has invalid build-channel metadata."
+    end
+
+    if metadata.source ~= "main" and metadata.source ~= "dev" then
+        return nil, "The update has invalid source metadata."
+    end
+
+    if (metadata.channel == "beta" and metadata.source ~= "dev")
+        or (metadata.channel == "stable" and metadata.source ~= "main") then
+        return nil, "The update channel and source metadata disagree."
+    end
+
+    if not metadata.version or not metadata.release_version
+        or not metadata.build_id or not metadata.commit then
+        return nil, "The update is missing build metadata."
+    end
+
+    if metadata.channel == "beta"
+        and (#metadata.commit < 7 or #metadata.commit > 64
+            or not metadata.commit:match("^[0-9a-fA-F]+$")) then
+        return nil, "The beta update has no valid commit identity."
+    end
+
+    return metadata
+end
+
+function Updater:compareCandidate(candidate)
+    local comparison = compareVersions(self.installed_version, candidate.version)
+    if comparison == nil then
+        return nil
+    end
+
+    if candidate.channel == "stable" and self.installed_channel == "beta" then
+        -- Returning to Stable may require moving back to its release version.
+        return -1
+    end
+
+    if self.installed_channel ~= candidate.channel then
+        -- Never switch from Stable to an older Beta build.
+        if comparison < 0 then
+            return 1
+        end
+        return -1
+    end
+
+    if comparison ~= 0 then
+        return comparison
+    end
+
+    if candidate.channel == "stable" then
+        return 0
+    end
+
+    local installed_beta_number = tonumber(
+        tostring(self.installed_build_id):match("^beta%.(%d+)$")
+    ) or 0
+    local candidate_beta_number = tonumber(candidate.beta_number) or 0
+
+    if installed_beta_number < candidate_beta_number then
+        return -1
+    elseif installed_beta_number > candidate_beta_number then
+        return 1
+    end
+
+    return self.installed_build_id == candidate.build_id and 0 or 1
+end
+
+function Updater:makeCandidate(release, channel)
+    local tag = tostring(release.tag_name or "")
+    local version, beta_number = tag:match("^v(%d+%.%d+%.%d+)-beta%.(%d+)$")
+
+    if channel == "stable" then
+        version = tag:match("^v(%d+%.%d+%.%d+)$")
+    end
+
+    if not version then
+        return nil
+    end
+
+    local candidate = {
+        version = version,
+        release_version = beta_number
+            and version .. "-beta." .. beta_number
+            or version,
+        tag = tag,
+        channel = channel,
+        source = channel == "beta" and "dev" or "main",
+        beta_number = beta_number,
+        build_id = beta_number and "beta." .. beta_number or "stable",
+        commit = tostring(release.body or ""):match(
+            "[Cc]ommit:%s*([0-9a-fA-F]+)"
+        ),
+        release = release,
+    }
+
+    if channel == "beta" and (not candidate.commit
+        or #candidate.commit < 7 or #candidate.commit > 64) then
+        return nil, "The beta release does not identify its commit."
+    end
+
+    candidate.comparison = self:compareCandidate(candidate)
+    if candidate.comparison == nil then
+        return nil, "The installed version number could not be compared."
+    end
+
+    if candidate.comparison < 0 then
+        local assets, asset_err = self:findReleaseAssets(
+            release,
+            candidate.release_version
+        )
+        if not assets then
+            return nil, asset_err
+        end
+
+        for key, value in pairs(assets) do
+            candidate[key] = value
+        end
+    end
+
+    return candidate
+end
+
 function Updater:fetchLatestRelease()
+    local api_url = self.channel == "beta"
+        and GITHUB_BETA_API_URL
+        or GITHUB_STABLE_API_URL
     local body, err, headers, code = requestMemory(
-        GITHUB_API_URL,
+        api_url,
         MAX_API_BYTES,
         "application/vnd.github+json"
     )
@@ -518,38 +723,44 @@ function Updater:fetchLatestRelease()
         return nil, "GitHub returned an invalid update response."
     end
 
-    local version = tostring(release.tag_name or ""):match(
-        "^v(%d+%.%d+%.%d+)$"
-    )
-
-    if not version then
-        return nil, "The latest release does not use a stable version number."
-    end
-
-    local comparison = compareVersions(self.installed_version, version)
-    if comparison == nil then
-        return nil, "The installed version number could not be compared."
-    end
-
-    local candidate = {
-        version = version,
-        tag = "v" .. version,
-        comparison = comparison,
-        release = release,
-    }
-
-    if comparison < 0 then
-        local assets, asset_err = self:findReleaseAssets(release, version)
-        if not assets then
-            return nil, asset_err
+    if self.channel == "stable" then
+        if release.prerelease == true or release.draft == true then
+            return nil, "GitHub returned an invalid stable release."
         end
 
-        for key, value in pairs(assets) do
-            candidate[key] = value
+        local candidate, candidate_err = self:makeCandidate(release, "stable")
+        if not candidate then
+            return nil, candidate_err
+        end
+        return candidate
+    end
+
+    local latest
+    for _, beta_release in ipairs(release) do
+        if beta_release.prerelease == true and beta_release.draft ~= true then
+            local candidate = self:makeCandidate(beta_release, "beta")
+            local version_comparison = candidate and compareVersions(
+                latest and latest.version or "0.0.0",
+                candidate.version
+            )
+            local candidate_number = tonumber(candidate and candidate.beta_number)
+                or 0
+            local latest_number = tonumber(latest and latest.beta_number) or 0
+
+            if candidate and (not latest
+                or version_comparison > 0
+                or (version_comparison == 0
+                    and candidate_number > latest_number)) then
+                latest = candidate
+            end
         end
     end
 
-    return candidate
+    if not latest then
+        return nil, "No beta release is currently available."
+    end
+
+    return latest
 end
 
 function Updater:checkForUpdates()
@@ -592,12 +803,13 @@ function Updater:checkForUpdates()
                 showInfo(string.format(
                     _(
                         "KOReader Remote is up to date.\n\n"
-                        .. "Installed version: v%s\n"
+                        .. "Installed build: %s\n"
                         .. "Latest release: v%s\n"
-                        .. "Update channel: Stable"
+                        .. "Update channel: %s"
                     ),
-                    self.installed_version,
-                    candidate.version
+                    self:getInstalledBuildLabel(),
+                    candidate.release_version,
+                    self:getChannelLabel()
                 ))
                 return
             end
@@ -607,12 +819,13 @@ function Updater:checkForUpdates()
                     _(
                         "The installed version is newer than the latest "
                         .. "public release.\n\n"
-                        .. "Installed version: v%s\n"
+                        .. "Installed build: %s\n"
                         .. "Latest release: v%s\n"
-                        .. "Update channel: Stable"
+                        .. "Update channel: %s"
                     ),
-                    self.installed_version,
-                    candidate.version
+                    self:getInstalledBuildLabel(),
+                    candidate.release_version,
+                    self:getChannelLabel()
                 ))
                 return
             end
@@ -621,16 +834,20 @@ function Updater:checkForUpdates()
                 text = string.format(
                     _(
                         "A KOReader Remote update is available.\n\n"
-                        .. "Installed version: v%s\n"
+                        .. "Installed build: %s\n"
                         .. "Available version: v%s\n"
-                        .. "Update channel: Stable\n"
+                        .. "Update channel: %s\n"
+                        .. "Build: %s (commit %s)\n"
                         .. "Download size: %s\n\n"
                         .. "The current plugin will be backed up before "
                         .. "installation.\n\n"
                         .. "Download and install the update?"
                     ),
-                    self.installed_version,
-                    candidate.version,
+                    self:getInstalledBuildLabel(),
+                    candidate.release_version,
+                    self:getChannelLabel(),
+                    candidate.build_id,
+                    (candidate.commit or "unknown"):sub(1, 7),
                     formatDownloadSize(candidate.archive_size)
                 ),
                 ok_text = _("Update"),
@@ -830,7 +1047,7 @@ function Updater:extractArchive(archive_path, entries)
     return true
 end
 
-function Updater:validateStaging(expected_version)
+function Updater:validateStaging(candidate)
     for _, relative in ipairs(REQUIRED_FILES) do
         local path = self.staging_dir .. "/" .. relative
 
@@ -851,13 +1068,34 @@ function Updater:validateStaging(expected_version)
         'local%s+VERSION%s*=%s*"(%d+%.%d+%.%d+)"'
     )
 
-    if staged_version ~= expected_version then
+    if staged_version ~= candidate.version then
         return nil, string.format(
             "The downloaded plugin reports v%s instead of v%s.",
             tostring(staged_version or "unknown"),
-            expected_version
+            candidate.version
         )
     end
+
+    local metadata, metadata_err = self:readBuildMetadata(
+        self.staging_dir .. "/build.lua"
+    )
+    if not metadata then
+        return nil, metadata_err
+    end
+
+    if metadata.channel ~= candidate.channel
+        or metadata.source ~= candidate.source
+        or metadata.version ~= candidate.version
+        or metadata.release_version ~= candidate.release_version
+        or metadata.build_id ~= candidate.build_id then
+        return nil, "The update build metadata does not match its release."
+    end
+
+    if candidate.commit and metadata.commit ~= candidate.commit then
+        return nil, "The update commit does not match its release identity."
+    end
+
+    candidate.commit = metadata.commit
 
     local function checkLuaDirectory(directory)
         for name in lfs.dir(directory) do
@@ -902,7 +1140,7 @@ function Updater:restoreSession(snapshot)
     end
 end
 
-function Updater:installStaging(version)
+function Updater:installStaging(candidate)
     if pathMode(self.backup_dir) ~= nil then
         return nil,
             "A previous update backup still exists. "
@@ -950,7 +1188,14 @@ function Updater:installStaging(version)
 
     local marker_ok, marker_err = writeFile(
         PENDING_MARKER,
-        version .. "\n" .. currentProcessId() .. "\n"
+        table.concat({
+            candidate.version,
+            currentProcessId(),
+            candidate.channel,
+            candidate.build_id,
+            candidate.commit or "unknown",
+            "",
+        }, "\n")
     )
 
     if not marker_ok then
@@ -1039,7 +1284,7 @@ function Updater:downloadCandidate(candidate)
         return nil, err
     end
 
-    ok, err = self:validateStaging(candidate.version)
+    ok, err = self:validateStaging(candidate)
     if not ok then
         removeTree(self.staging_dir)
         return nil, err
@@ -1057,7 +1302,7 @@ function Updater:downloadAndInstall(candidate)
     self.busy = true
     local progress = showProgress(string.format(
         _("Downloading and checking KOReader Remote v%s…"),
-        candidate.version
+        candidate.release_version
     ))
 
     UIManager:scheduleIn(0.1, function()
@@ -1076,7 +1321,7 @@ function Updater:downloadAndInstall(candidate)
                 return nil, download_err
             end
 
-            return self:installStaging(candidate.version)
+            return self:installStaging(candidate)
         end)
 
         if standby_prevented then
@@ -1110,10 +1355,12 @@ function Updater:downloadAndInstall(candidate)
 
         UIManager:askForRestart(string.format(
             _(
-                "KOReader Remote v%s was installed.\n\n"
+                "KOReader Remote v%s (%s, commit %s) was installed.\n\n"
                 .. "KOReader must restart before the new version can be used."
             ),
-            candidate.version
+            candidate.release_version,
+            candidate.channel == "beta" and _("Beta") or _("Stable"),
+            (candidate.commit or "unknown"):sub(1, 7)
         ))
     end)
 end
@@ -1150,6 +1397,33 @@ function Updater:finalizePendingInstall()
             "KOReaderRemote updater: pending version mismatch",
             pending.version,
             self.installed_version
+        )
+        return
+    end
+
+    if pending.channel and pending.channel ~= self.installed_channel then
+        logger.warn(
+            "KOReaderRemote updater: pending channel mismatch",
+            pending.channel,
+            self.installed_channel
+        )
+        return
+    end
+
+    if pending.build_id and pending.build_id ~= self.installed_build_id then
+        logger.warn(
+            "KOReaderRemote updater: pending build mismatch",
+            pending.build_id,
+            self.installed_build_id
+        )
+        return
+    end
+
+    if pending.commit and pending.commit ~= self.installed_commit then
+        logger.warn(
+            "KOReaderRemote updater: pending commit mismatch",
+            pending.commit,
+            self.installed_commit
         )
         return
     end

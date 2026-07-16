@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.9.2
+
+### Added
+
+- Added Stable and Beta update channels with a persistent channel selection.
+- Added build metadata containing channel, release version, build ID, and
+  commit identity to every packaged plugin.
+- Added Beta prerelease packaging from the `dev` branch with checksum-verified
+  ZIP artifacts.
+
+### Changed
+
+- The updater now displays and validates the selected channel and exact build
+  identity before installation.
+- Plugin status and the local API now expose the installed build identity.
+
 ## v0.9.1
 
 ### Changed

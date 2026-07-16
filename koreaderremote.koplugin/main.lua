@@ -1,4 +1,4 @@
--- KOReader Remote v0.9.1
+-- KOReader Remote v0.9.2
 -- Local HTTP remote control for page turning.
 
 local DataStorage = require("datastorage")
@@ -11,7 +11,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
-local VERSION = "0.9.1"
+local VERSION = "0.9.2"
 local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
@@ -19,8 +19,24 @@ local AUTOSTART_SETTINGS_KEY = "koreaderremote_autostart"
 local PAIRED_DEVICES_SETTINGS_KEY = "koreaderremote_paired_devices"
 local PAIRING_TOKEN_SETTINGS_KEY = "koreaderremote_pairing_token"
 local PAIRING_CODE_SETTINGS_KEY = "koreaderremote_pairing_code"
+local UPDATE_CHANNEL_SETTINGS_KEY = "koreaderremote_update_channel"
 local PLUGIN_DIR = DataStorage:getDataDir() .. "/plugins/koreaderremote.koplugin"
 local INDEX_FILE = PLUGIN_DIR .. "/web/index.html"
+local BUILD = {
+    channel = "stable",
+    source = "main",
+    version = VERSION,
+    release_version = VERSION,
+    build_id = "legacy",
+    commit = "unknown",
+}
+local build_loader = loadfile(PLUGIN_DIR .. "/build.lua")
+if build_loader then
+    local build_ok, build_result = pcall(build_loader)
+    if build_ok and type(build_result) == "table" then
+        BUILD = build_result
+    end
+end
 local DeviceControls = dofile(PLUGIN_DIR .. "/devicecontrols.lua")
 local Interaction = dofile(PLUGIN_DIR .. "/interaction.lua")
 local Updater = dofile(PLUGIN_DIR .. "/updater.lua")
@@ -301,6 +317,12 @@ function Remote:init()
 
     self.updater = Updater:new{
         installed_version = VERSION,
+        installed_channel = BUILD.channel,
+        installed_release_version = BUILD.release_version,
+        installed_build_id = BUILD.build_id,
+        installed_commit = BUILD.commit,
+        channel = G_reader_settings:readSetting(UPDATE_CHANNEL_SETTINGS_KEY)
+            or BUILD.channel,
         plugin_dir = PLUGIN_DIR,
         prepare_install = function()
             return self:prepareForPluginUpdate()
@@ -837,6 +859,7 @@ function Remote:showConnectionTest()
                 .. "Network: %s\n"
                 .. "IP: %s\n"
                 .. "Port: %d\n"
+                .. "Build: %s\n"
                 .. "Autostart: %s\n"
                 .. "Session: %s\n"
                 .. "Document: %s\n"
@@ -849,6 +872,7 @@ function Remote:showConnectionTest()
             network_text,
             ip_text,
             runtime.running_port or self:getPort(),
+            self.updater:getInstalledBuildLabel(),
             runtime.autostart and _("Enabled") or _("Disabled"),
             session_text,
             document_text,
@@ -1459,6 +1483,11 @@ function Remote:onRequest(data, request_id)
         return self:sendJSON(request_id, 200, {
             ok = true,
             version = VERSION,
+            channel = BUILD.channel,
+            source = BUILD.source,
+            release_version = BUILD.release_version,
+            build_id = BUILD.build_id,
+            commit = BUILD.commit,
             state = runtime.state,
             port = runtime.running_port or self:getPort(),
             autostart = runtime.autostart == true,
@@ -1529,6 +1558,11 @@ function Remote:onRequest(data, request_id)
         return self:sendJSON(request_id, 200, {
             ok = true,
             version = VERSION,
+            channel = BUILD.channel,
+            source = BUILD.source,
+            release_version = BUILD.release_version,
+            build_id = BUILD.build_id,
+            commit = BUILD.commit,
             capabilities = capabilities,
         })
     end
@@ -1546,6 +1580,11 @@ function Remote:onRequest(data, request_id)
         return self:sendJSON(request_id, 200, {
             ok = true,
             version = VERSION,
+            channel = BUILD.channel,
+            source = BUILD.source,
+            release_version = BUILD.release_version,
+            build_id = BUILD.build_id,
+            commit = BUILD.commit,
             state = controls:getState(),
         })
     end
@@ -2104,6 +2143,56 @@ function Remote:getMenuStatusText()
     return _("Server stopped")
 end
 
+function Remote:getUpdateChannel()
+    local channel = self.updater and self.updater:getChannel() or "stable"
+    return channel == "beta" and _("Beta (dev)") or _("Stable (main)")
+end
+
+function Remote:setUpdateChannel(channel, touchmenu_instance)
+    channel = channel == "beta" and "beta" or "stable"
+    self.updater:setChannel(channel)
+    G_reader_settings:saveSetting(UPDATE_CHANNEL_SETTINGS_KEY, channel)
+
+    if touchmenu_instance then
+        touchmenu_instance:updateItems()
+    end
+end
+
+function Remote:showUpdateChannelDialog(touchmenu_instance)
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local selected = self.updater:getChannel()
+
+    self.update_channel_dialog = ButtonDialog:new{
+        title = _("Update channel"),
+        buttons = {
+            {
+                {
+                    text = selected == "stable"
+                        and _("Stable (main, selected)")
+                        or _("Stable (main)"),
+                    callback = function()
+                        self:setUpdateChannel("stable", touchmenu_instance)
+                        UIManager:close(self.update_channel_dialog)
+                    end,
+                },
+            },
+            {
+                {
+                    text = selected == "beta"
+                        and _("Beta (dev, selected)")
+                        or _("Beta (dev)"),
+                    callback = function()
+                        self:setUpdateChannel("beta", touchmenu_instance)
+                        UIManager:close(self.update_channel_dialog)
+                    end,
+                },
+            },
+        },
+    }
+
+    UIManager:show(self.update_channel_dialog)
+end
+
 function Remote:addToMainMenu(menu_items)
     menu_items.koreader_remote = {
         text = _("KOReader Remote"),
@@ -2165,8 +2254,19 @@ function Remote:addToMainMenu(menu_items)
             {
                 text_func = function()
                     return string.format(
-                        _("Installed version: v%s"),
-                        VERSION
+                        _("Update channel: %s"),
+                        self:getUpdateChannel()
+                    )
+                end,
+                callback = function(touchmenu_instance)
+                    self:showUpdateChannelDialog(touchmenu_instance)
+                end,
+            },
+            {
+                text_func = function()
+                    return string.format(
+                        _("Installed: %s"),
+                        self.updater:getInstalledBuildLabel()
                     )
                 end,
                 enabled_func = function()
