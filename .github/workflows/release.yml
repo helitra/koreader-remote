@@ -53,7 +53,6 @@ jobs:
           test -f CHANGELOG.md
           test -f VERSION
           test -f "${PLUGIN}/_meta.lua"
-          test -f "${PLUGIN}/pluginhub.json"
           test -f "${MAIN}"
           test -f "${CONTROLS}"
           test -f "${INTERACTION}"
@@ -71,8 +70,6 @@ jobs:
           "${LUAC}" -p "${UPDATER}"
 
           grep -Fq "local VERSION = \"${VERSION}\"" "${MAIN}"
-          grep -Fq "\"version\": \"${VERSION}\"" "${PLUGIN}/pluginhub.json"
-          grep -Fq 'pluginhub.register({' "${MAIN}"
           grep -Fq 'repository = "helitra/koreader-remote"' "${MAIN}"
           grep -Fq "## v${VERSION}" CHANGELOG.md
           grep -Fq 'sorting_hint = "tools"' "${MAIN}"

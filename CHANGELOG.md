@@ -19,13 +19,6 @@
 - Added a six-digit reader code for pairing after manually entering the URL,
   plus **Reset paired devices** to revoke all existing browser access.
 
-## v0.8.13
-
-### Added
-
-- Registered KOReader Remote with PluginHub's optional API so PluginHub can use its exact GitHub release source and package name.
-- Added static PluginHub metadata for update discovery before KOReader Remote has been started.
-
 ## v0.8.12
 
 ### Fixed
