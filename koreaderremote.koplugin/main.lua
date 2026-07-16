@@ -2029,11 +2029,11 @@ end
 
 function Remote:getUpdateChannel()
     local channel = self.updater and self.updater:getChannel() or "stable"
-    return channel == "beta" and _("Beta (dev)") or _("Stable (main)")
+    return channel == "dev" and _("Dev") or _("Stable (main)")
 end
 
 function Remote:setUpdateChannel(channel, touchmenu_instance)
-    channel = channel == "beta" and "beta" or "stable"
+    channel = channel == "dev" and "dev" or "stable"
     self.updater:setChannel(channel)
     G_reader_settings:saveSetting(UPDATE_CHANNEL_SETTINGS_KEY, channel)
 
@@ -2062,11 +2062,11 @@ function Remote:showUpdateChannelDialog(touchmenu_instance)
             },
             {
                 {
-                    text = selected == "beta"
-                        and _("Beta (dev, selected)")
-                        or _("Beta (dev)"),
+                    text = selected == "dev"
+                        and _("Dev (selected)")
+                        or _("Dev"),
                     callback = function()
-                        self:setUpdateChannel("beta", touchmenu_instance)
+                        self:setUpdateChannel("dev", touchmenu_instance)
                         UIManager:close(self.update_channel_dialog)
                     end,
                 },

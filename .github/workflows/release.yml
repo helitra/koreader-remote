@@ -40,10 +40,10 @@ jobs:
 
           VERSION_VALUE="$(tr -d '[:space:]' < "${VERSION}")"
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
-            CHANNEL="beta"
+            CHANNEL="dev"
             SOURCE="dev"
-            BUILD_ID="beta.${GITHUB_RUN_NUMBER}"
-            RELEASE_VERSION="${VERSION_VALUE}-beta.${GITHUB_RUN_NUMBER}"
+            BUILD_ID="dev.${GITHUB_RUN_NUMBER}"
+            RELEASE_VERSION="${VERSION_VALUE}-dev.${GITHUB_RUN_NUMBER}"
           else
             CHANNEL="stable"
             SOURCE="main"
@@ -108,7 +108,7 @@ jobs:
           version, branch = sys.argv[1:]
           data = Path("koreaderremote.koplugin/build.lua").read_text()
           fields = dict(re.findall(r'^\s*(\w+) = "([^"]+)"', data, re.M))
-          expected_channel = "beta" if branch == "dev" else "stable"
+          expected_channel = "dev" if branch == "dev" else "stable"
           expected_source = "dev" if branch == "dev" else "main"
           if fields.get("channel") != expected_channel:
               raise SystemExit("Build channel does not match the branch.")

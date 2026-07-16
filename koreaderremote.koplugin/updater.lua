@@ -449,14 +449,14 @@ function Updater:new(options)
 
     local instance = setmetatable({}, self)
     instance.installed_version = assert(options.installed_version)
-    instance.installed_channel = options.installed_channel == "beta"
-        and "beta"
-        or "stable"
+    instance.installed_channel = options.installed_channel == "stable"
+        and "stable"
+        or "dev"
     instance.installed_release_version = options.installed_release_version
         or instance.installed_version
     instance.installed_build_id = options.installed_build_id or "source"
     instance.installed_commit = options.installed_commit or "unknown"
-    instance.channel = options.channel == "beta" and "beta" or "stable"
+    instance.channel = options.channel == "stable" and "stable" or "dev"
     instance.plugin_dir = assert(options.plugin_dir)
     instance.prepare_install = options.prepare_install
     instance.restore_after_failure = options.restore_after_failure
@@ -476,19 +476,19 @@ function Updater:getChannel()
 end
 
 function Updater:setChannel(channel)
-    self.channel = channel == "beta" and "beta" or "stable"
+    self.channel = channel == "stable" and "stable" or "dev"
 end
 
 function Updater:getChannelLabel()
-    return self.channel == "beta"
-        and _("Beta (dev)")
+    return self.channel == "dev"
+        and _("Dev")
         or _("Stable (main)")
 end
 
 function Updater:getInstalledBuildInfo()
     return {
         channel = self.installed_channel,
-        source = self.installed_channel == "beta" and "dev" or "main",
+        source = self.installed_channel == "dev" and "dev" or "main",
         version = self.installed_version,
         release_version = self.installed_release_version,
         build_id = self.installed_build_id,
@@ -504,9 +504,9 @@ function Updater:getInstalledBuildLabel()
 
     return string.format(
         _("%s v%s (%s, %s, commit %s)"),
-        self.installed_channel == "beta" and _("Beta") or _("Stable"),
+        self.installed_channel == "dev" and _("Dev") or _("Stable"),
         self.installed_release_version,
-        self.installed_channel == "beta" and _("dev") or _("main"),
+        self.installed_channel == "dev" and _("dev") or _("main"),
         self.installed_build_id,
         commit
     )
@@ -576,7 +576,11 @@ function Updater:readBuildMetadata(path)
         commit = content:match('commit%s*=%s*"([^"\r\n]+)"'),
     }
 
-    if metadata.channel ~= "stable" and metadata.channel ~= "beta" then
+    if metadata.source == "dev" and metadata.channel ~= "stable" then
+        metadata.channel = "dev"
+    end
+
+    if metadata.channel ~= "stable" and metadata.channel ~= "dev" then
         return nil, "The update has invalid build-channel metadata."
     end
 
@@ -584,7 +588,7 @@ function Updater:readBuildMetadata(path)
         return nil, "The update has invalid source metadata."
     end
 
-    if (metadata.channel == "beta" and metadata.source ~= "dev")
+    if (metadata.channel == "dev" and metadata.source ~= "dev")
         or (metadata.channel == "stable" and metadata.source ~= "main") then
         return nil, "The update channel and source metadata disagree."
     end
@@ -594,10 +598,10 @@ function Updater:readBuildMetadata(path)
         return nil, "The update is missing build metadata."
     end
 
-    if metadata.channel == "beta"
+    if metadata.channel == "dev"
         and (#metadata.commit < 7 or #metadata.commit > 64
             or not metadata.commit:match("^[0-9a-fA-F]+$")) then
-        return nil, "The beta update has no valid commit identity."
+        return nil, "The dev update has no valid commit identity."
     end
 
     return metadata
@@ -609,13 +613,13 @@ function Updater:compareCandidate(candidate)
         return nil
     end
 
-    if candidate.channel == "stable" and self.installed_channel == "beta" then
+    if candidate.channel == "stable" and self.installed_channel == "dev" then
         -- Returning to Stable may require moving back to its release version.
         return -1
     end
 
     if self.installed_channel ~= candidate.channel then
-        -- Stable can opt into a newer or same-version Beta build.
+        -- Stable can opt into a newer or same-version Dev build.
         return comparison <= 0 and -1 or 1
     end
 
@@ -627,14 +631,14 @@ function Updater:compareCandidate(candidate)
         return 0
     end
 
-    local installed_beta_number = tonumber(
-        tostring(self.installed_build_id):match("^beta%.(%d+)$")
+    local installed_dev_number = tonumber(
+        tostring(self.installed_build_id):match("^[%a]+%.(%d+)$")
     ) or 0
-    local candidate_beta_number = tonumber(candidate.beta_number) or 0
+    local candidate_dev_number = tonumber(candidate.dev_number) or 0
 
-    if installed_beta_number < candidate_beta_number then
+    if installed_dev_number < candidate_dev_number then
         return -1
-    elseif installed_beta_number > candidate_beta_number then
+    elseif installed_dev_number > candidate_dev_number then
         return 1
     end
 
@@ -643,7 +647,12 @@ end
 
 function Updater:makeCandidate(release, channel)
     local tag = tostring(release.tag_name or "")
-    local version, beta_number = tag:match("^v(%d+%.%d+%.%d+)-beta%.(%d+)$")
+    local version, dev_number
+
+    if channel == "dev" then
+        version, dev_number = tag:match("^v(%d+%.%d+%.%d+)-dev%.(%d+)$")
+            or tag:match("^v(%d+%.%d+%.%d+)-beta%.(%d+)$")
+    end
 
     if channel == "stable" then
         version = tag:match("^v(%d+%.%d+%.%d+)$")
@@ -655,23 +664,23 @@ function Updater:makeCandidate(release, channel)
 
     local candidate = {
         version = version,
-        release_version = beta_number
-            and version .. "-beta." .. beta_number
+        release_version = dev_number
+            and version .. "-dev." .. dev_number
             or version,
         tag = tag,
         channel = channel,
-        source = channel == "beta" and "dev" or "main",
-        beta_number = beta_number,
-        build_id = beta_number and "beta." .. beta_number or "stable",
+        source = channel == "dev" and "dev" or "main",
+        dev_number = dev_number,
+        build_id = dev_number and "dev." .. dev_number or "stable",
         commit = tostring(release.body or ""):match(
             "[Cc]ommit:%s*([0-9a-fA-F]+)"
         ),
         release = release,
     }
 
-    if channel == "beta" and (not candidate.commit
+    if channel == "dev" and (not candidate.commit
         or #candidate.commit < 7 or #candidate.commit > 64) then
-        return nil, "The beta release does not identify its commit."
+        return nil, "The dev release does not identify its commit."
     end
 
     candidate.comparison = self:compareCandidate(candidate)
@@ -697,7 +706,7 @@ function Updater:makeCandidate(release, channel)
 end
 
 function Updater:fetchLatestRelease()
-    local api_url = self.channel == "beta"
+    local api_url = self.channel == "dev"
         and GITHUB_BETA_API_URL
         or GITHUB_STABLE_API_URL
     local body, err, headers, code = requestMemory(
@@ -733,16 +742,16 @@ function Updater:fetchLatestRelease()
     end
 
     local latest
-    for _, beta_release in ipairs(release) do
-        if beta_release.prerelease == true and beta_release.draft ~= true then
-            local candidate = self:makeCandidate(beta_release, "beta")
+    for _, dev_release in ipairs(release) do
+        if dev_release.prerelease == true and dev_release.draft ~= true then
+            local candidate = self:makeCandidate(dev_release, "dev")
             local version_comparison = candidate and compareVersions(
                 latest and latest.version or "0.0.0",
                 candidate.version
             )
-            local candidate_number = tonumber(candidate and candidate.beta_number)
+            local candidate_number = tonumber(candidate and candidate.dev_number)
                 or 0
-            local latest_number = tonumber(latest and latest.beta_number) or 0
+            local latest_number = tonumber(latest and latest.dev_number) or 0
 
             if candidate and (not latest
                 or version_comparison > 0
@@ -754,7 +763,7 @@ function Updater:fetchLatestRelease()
     end
 
     if not latest then
-        return nil, "No beta release is currently available."
+        return nil, "No dev release is currently available."
     end
 
     return latest
@@ -1356,7 +1365,7 @@ function Updater:downloadAndInstall(candidate)
                 .. "KOReader must restart before the new version can be used."
             ),
             candidate.release_version,
-            candidate.channel == "beta" and _("Beta") or _("Stable"),
+            candidate.channel == "dev" and _("Dev") or _("Stable"),
             (candidate.commit or "unknown"):sub(1, 7)
         ))
     end)

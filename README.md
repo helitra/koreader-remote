@@ -137,15 +137,15 @@ Tools -> KOReader Remote -> Check for updates
 ```
 
 Updates are manual: the plugin never polls GitHub in the background. In
-**Update channel**, choose **Stable** for tested releases or **Beta** for
-prereleases from the `dev` branch. Before an update replaces the plugin, it
+**Update channel**, choose **Stable** for tested releases or **Dev** for
+builds from the `dev` branch. Before an update replaces the plugin, it
 verifies the release checksum, archive layout, build metadata, and Lua syntax,
 then keeps the previous version as a backup until the new one has started
-successfully. Beta builds show their release number, build ID, and commit SHA.
+successfully. Dev builds show their release number, build ID, and commit SHA.
 
-Stable releases are published from `main`. Beta releases are published as
-GitHub prereleases from `dev` and are intended for testing; switch back to
-Stable after testing if you want the regular release stream again.
+Stable releases are published from `main`. Dev releases are published as GitHub
+prereleases from `dev` and are intended for testing; switch back to Stable if
+you want the regular release stream again.
 
 ## 🔐 Security
 
@@ -189,7 +189,7 @@ Brightness and warmth use percentages and are translated to the device's
 native range. Note text is sent as bounded Base64-encoded UTF-8 request
 headers because KOReader's bundled HTTP server does not read request bodies.
 The status responses also include `channel`, `source`, `release_version`,
-`build_id`, and `commit` so Beta testers can identify the exact build.
+`build_id`, and `commit` so Dev testers can identify the exact build.
 
 ## 🐛 Help and contributing
 
