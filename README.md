@@ -60,10 +60,9 @@ Guest Wi-Fi networks often block local device-to-device traffic.
    Tools -> KOReader Remote -> Start remote server
    ```
 
-4. Select **Pair phone / show QR code** and scan the code with your phone.
+4. Select **Show QR code** and scan the code with your phone.
 
-The QR code opens a local address such as `http://192.168.1.42:8081/`. It is
-only a convenient address share unless you enable paired-device protection.
+The QR code opens a local address such as `http://192.168.1.42:8081/`.
 
 ## ✨ What it does
 
@@ -94,7 +93,7 @@ and prevents either device from silently overwriting a newer draft.
 
 ### Stay connected
 
-- QR-code pairing and configurable server port
+- QR-code sharing and configurable server port
 - Optional automatic start with KOReader
 - Wi-Fi recovery after standby and browser reconnection when the reader returns
 - The server remains available while changing books or visiting the file manager
@@ -154,14 +153,6 @@ KOReader Remote is for trusted local networks. It has no authentication or
 access token: anyone who can reach the reader's IP and port can use its remote
 controls and access the annotations of the open book. Do not expose it to the
 internet. Keeping Wi-Fi active can increase battery use.
-
-If you want a little more control on a shared local network, enable
-**Tools -> KOReader Remote -> Only paired devices**. The default stays open,
-so entering the short URL or scanning the QR code still works immediately.
-With protection enabled, the QR code pairs a phone automatically and that
-browser stays paired across refreshes, standby, and KOReader restarts. A phone
-where you enter the URL manually asks once for the six-digit code shown on the
-reader. Use **Reset paired devices** to revoke existing phones.
 
 ## 🔌 API
 

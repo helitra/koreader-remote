@@ -16,9 +16,6 @@ local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
 local AUTOSTART_SETTINGS_KEY = "koreaderremote_autostart"
-local PAIRED_DEVICES_SETTINGS_KEY = "koreaderremote_paired_devices"
-local PAIRING_TOKEN_SETTINGS_KEY = "koreaderremote_pairing_token"
-local PAIRING_CODE_SETTINGS_KEY = "koreaderremote_pairing_code"
 local UPDATE_CHANNEL_SETTINGS_KEY = "koreaderremote_update_channel"
 local PLUGIN_DIR = DataStorage:getDataDir() .. "/plugins/koreaderremote.koplugin"
 local INDEX_FILE = PLUGIN_DIR .. "/web/index.html"
@@ -258,28 +255,6 @@ local function parseBoolean(value)
     return nil
 end
 
-local function randomHex(byte_count)
-    local random_file = io.open("/dev/urandom", "rb")
-    if random_file then
-        local bytes = random_file:read(byte_count)
-        random_file:close()
-        if bytes and #bytes == byte_count then
-            return (bytes:gsub(".", function(byte)
-                return string.format("%02x", string.byte(byte))
-            end))
-        end
-    end
-
-    -- All supported readers provide /dev/urandom. This fallback only keeps the
-    -- pairing flow usable on unusual development platforms.
-    math.randomseed(os.time() + math.floor(os.clock() * 1000000))
-    local parts = {}
-    for index = 1, byte_count do
-        parts[index] = string.format("%02x", math.random(0, 255))
-    end
-    return table.concat(parts)
-end
-
 function Remote:init()
     self.port = tonumber(G_reader_settings:readSetting(PORT_SETTINGS_KEY))
         or DEFAULT_PORT
@@ -443,54 +418,6 @@ function Remote:setAutostart(enabled)
             end
         end
     end
-end
-
-function Remote:isPairedDevicesOnly()
-    return G_reader_settings:isTrue(PAIRED_DEVICES_SETTINGS_KEY)
-end
-
-function Remote:setPairedDevicesOnly(enabled)
-    if enabled then
-        G_reader_settings:makeTrue(PAIRED_DEVICES_SETTINGS_KEY)
-        self:getPairingToken()
-        self:getPairingCode()
-    else
-        G_reader_settings:delSetting(PAIRED_DEVICES_SETTINGS_KEY)
-    end
-end
-
-function Remote:getPairingToken()
-    local token = G_reader_settings:readSetting(PAIRING_TOKEN_SETTINGS_KEY)
-    if type(token) ~= "string" or #token < 24 then
-        token = randomHex(24)
-        G_reader_settings:saveSetting(PAIRING_TOKEN_SETTINGS_KEY, token)
-    end
-    return token
-end
-
-function Remote:getPairingCode()
-    local code = G_reader_settings:readSetting(PAIRING_CODE_SETTINGS_KEY)
-    if type(code) ~= "string" or code:match("^%d%d%d%d%d%d$") == nil then
-        code = string.format("%06d", tonumber(randomHex(3), 16) % 1000000)
-        G_reader_settings:saveSetting(PAIRING_CODE_SETTINGS_KEY, code)
-    end
-    return code
-end
-
-function Remote:resetPairedDevices()
-    G_reader_settings:saveSetting(PAIRING_TOKEN_SETTINGS_KEY, randomHex(24))
-    G_reader_settings:saveSetting(
-        PAIRING_CODE_SETTINGS_KEY,
-        string.format("%06d", tonumber(randomHex(3), 16) % 1000000)
-    )
-end
-
-function Remote:isAuthorized(headers)
-    if not self:isPairedDevicesOnly() then
-        return true
-    end
-    return type(headers) == "table"
-        and headers["x-koreader-remote-token"] == self:getPairingToken()
 end
 
 -- State and retry handling ---------------------------------------------------
@@ -695,9 +622,6 @@ function Remote:updateConnectionInfo(ip)
     runtime.local_ip = ip
     runtime.connection_url = new_url
     runtime.qr_url = new_url
-    if self:isPairedDevicesOnly() then
-        runtime.qr_url = new_url .. "#pair=" .. self:getPairingToken()
-    end
     runtime.connection_revision = runtime.connection_revision + 1
 
     logger.info(
@@ -761,9 +685,6 @@ function Remote:showQRCode()
     local QRMessage = require("ui/widget/qrmessage")
 
     runtime.qr_url = url
-    if self:isPairedDevicesOnly() then
-        runtime.qr_url = url .. "#pair=" .. self:getPairingToken()
-    end
 
     UIManager:show(QRMessage:new{
         text = runtime.qr_url,
@@ -797,24 +718,15 @@ function Remote:showPairingDialog()
 
     local ConfirmBox = require("ui/widget/confirmbox")
 
-    local pairing_text = url
-    if self:isPairedDevicesOnly() then
-        pairing_text = string.format(
-            _("%s\n\nManual pairing code: %s"),
-            url,
-            self:getPairingCode()
-        )
-    end
-
     UIManager:show(ConfirmBox:new{
         text = string.format(
             _(
                 "KOReader Remote is running.\n\n"
                 .. "IP address: %s\n\n"
-                .. "Pairing link:\n%s"
+                .. "Remote URL:\n%s"
             ),
             runtime.local_ip,
-            pairing_text
+            url
         ),
         ok_text = _("Show QR code"),
         ok_callback = function()
@@ -1011,7 +923,7 @@ function Remote:stopServer()
     -- Keep the last real URL across standby/reconnect so the cached URL and QR
     -- payload remain unchanged when the same IP returns. They are hidden while
     -- the server is stopped or the network is unavailable.
-    logger.dbg("KOReaderRemote: preserving last pairing URL for comparison")
+    logger.dbg("KOReaderRemote: preserving last remote URL for comparison")
     logger.info("KOReaderRemote: server stopped")
 end
 
@@ -1439,35 +1351,6 @@ function Remote:onRequest(data, request_id)
             "text/html; charset=utf-8",
             body,
             true
-        )
-    end
-
-    if uri == "/api/v1/pair" then
-        if method ~= "POST" then
-            return self:sendControlError(
-                request_id, 405, "METHOD_NOT_ALLOWED", "Use POST for pairing."
-            )
-        end
-        if not self:isPairedDevicesOnly() then
-            return self:sendJSON(request_id, 200, { ok = true, protected = false })
-        end
-        if headers["x-koreader-remote-code"] ~= self:getPairingCode() then
-            return self:sendControlError(
-                request_id, 401, "PAIRING_CODE_REQUIRED", "Enter the code shown on the reader."
-            )
-        end
-        return self:sendJSON(request_id, 200, {
-            ok = true,
-            token = self:getPairingToken(),
-        })
-    end
-
-    if uri:match("^/api/") and not self:isAuthorized(headers) then
-        return self:sendControlError(
-            request_id,
-            401,
-            "PAIRING_REQUIRED",
-            "Scan the pairing QR code or enter the code shown on the reader."
         )
     end
 
@@ -2228,7 +2111,7 @@ function Remote:addToMainMenu(menu_items)
                 separator = true,
             },
             {
-                text = _("Pair phone / show QR code"),
+                text = _("Show QR code"),
                 enabled_func = function()
                     return self:isRunning()
                         and runtime.state == STATE_RUNNING
@@ -2281,38 +2164,6 @@ function Remote:addToMainMenu(menu_items)
                 end,
                 callback = function()
                     self:setAutostart(not runtime.autostart)
-                end,
-            },
-            {
-                text = _("Only paired devices"),
-                checked_func = function()
-                    return self:isPairedDevicesOnly()
-                end,
-                callback = function()
-                    self:setPairedDevicesOnly(not self:isPairedDevicesOnly())
-                end,
-            },
-            {
-                text = _("Reset paired devices"),
-                enabled_func = function()
-                    return self:isPairedDevicesOnly()
-                end,
-                callback = function()
-                    local ConfirmBox = require("ui/widget/confirmbox")
-                    UIManager:show(ConfirmBox:new{
-                        text = _(
-                            "Remove access from all paired phones?\n\n"
-                            .. "Scan the QR code again to pair a device."
-                        ),
-                        ok_text = _("Reset"),
-                        ok_callback = function()
-                            self:resetPairedDevices()
-                            if runtime.local_ip then
-                                self:updateConnectionInfo(runtime.local_ip)
-                            end
-                        end,
-                        cancel_text = _("Cancel"),
-                    })
                 end,
             },
             {

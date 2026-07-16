@@ -27,13 +27,7 @@
 
 ### Added
 
-- Added optional **Only paired devices** access protection. The default remains
-  open local-network access through the short URL or QR code.
-- In protected mode, scanning the QR code pairs a browser without an extra
-  step. Previously paired browsers reconnect after refresh, standby, or a
-  server restart.
-- Added a six-digit reader code for pairing after manually entering the URL,
-  plus **Reset paired devices** to revoke all existing browser access.
+- Added QR-code sharing for quick access to the local remote URL.
 
 ## v0.8.12
 

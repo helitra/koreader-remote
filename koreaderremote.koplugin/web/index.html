@@ -1201,7 +1201,6 @@
     const SEND_DELAY_MS = 170;
     const NOTE_POLL_MS = 1800;
     const OLED_STORAGE_KEY = "koreaderRemoteOledMode";
-    const PAIRING_TOKEN_KEY = "koreaderRemotePairingToken";
     const REPEAT_PHASES = [
       { until: 1500, interval: 420 },
       { until: 3000, interval: 320 },
@@ -1292,8 +1291,6 @@
     let bookmarkQuery = "";
     let bookmarkSortMode = "book";
     let bookmarkRequestRunning = false;
-    let pairingToken = localStorage.getItem(PAIRING_TOKEN_KEY);
-    let pairingPromptShown = false;
 
     function clamp(value, minimum, maximum) {
       return Math.max(minimum, Math.min(maximum, value));
@@ -1310,12 +1307,8 @@
     }
 
     async function fetchWithTimeout(path, options = {}, timeout = 5000) {
-      const headers = new Headers(options.headers || {});
-      if (pairingToken) {
-        headers.set("X-KOReader-Remote-Token", pairingToken);
-      }
       if (typeof AbortController === "undefined") {
-        return fetch(path, { ...options, headers });
+        return fetch(path, options);
       }
 
       const controller = new AbortController();
@@ -1324,53 +1317,11 @@
       try {
         return await fetch(path, {
           ...options,
-          headers,
           signal: controller.signal,
         });
       } finally {
         window.clearTimeout(timer);
       }
-    }
-
-    function savePairingToken(token) {
-      pairingToken = token;
-      localStorage.setItem(PAIRING_TOKEN_KEY, token);
-    }
-
-    async function pairFromLinkOrCode(askForCode = false) {
-      const params = new URLSearchParams(window.location.hash.slice(1));
-      const linkToken = params.get("pair");
-
-      if (linkToken) {
-        savePairingToken(linkToken);
-        history.replaceState(null, "", window.location.pathname);
-        return true;
-      }
-
-      if (!askForCode) {
-        return false;
-      }
-
-      pairingPromptShown = true;
-
-      const code = window.prompt(
-        "Enter the six-digit pairing code shown on your reader"
-      );
-      if (!code) {
-        return false;
-      }
-
-      const response = await fetchWithTimeout("/api/v1/pair", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "X-KOReader-Remote-Code": code.trim() },
-      });
-      const payload = await readJSON(response);
-      if (!payload.token) {
-        return false;
-      }
-      savePairingToken(payload.token);
-      return true;
     }
 
     async function readJSON(response) {
@@ -2386,14 +2337,6 @@
 
         scheduleConnectionCheck(15000);
       } catch (error) {
-        if (
-          error.payload
-          && error.payload.error === "PAIRING_REQUIRED"
-          && !pairingPromptShown
-          && await pairFromLinkOrCode(true)
-        ) {
-          return checkConnection();
-        }
         failedPings += 1;
         console.debug("KOReader Remote reconnect check failed:", error);
 
@@ -2735,7 +2678,7 @@
     window.addEventListener("online", checkConnection);
     applyOledMode(readOledPreference());
     scheduleNotePoll();
-    pairFromLinkOrCode().then(() => checkConnection());
+    checkConnection();
   </script>
 </body>
 </html>
