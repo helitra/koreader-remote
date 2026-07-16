@@ -51,6 +51,9 @@ local STATE_ERROR = "error"
 local RETRY_DELAYS = { 2, 5, 10, 20, 40, 80, 160, 300 }
 local RECOVERY_RETRY_SECONDS = 300
 local MANUAL_RECOVERY_MAX_SLEEP_SECONDS = 300
+local LOCAL_IP_CACHE_SECONDS = 15
+local FIREWALL_INPUT_CHAIN = "KOREADERREMOTE_IN"
+local FIREWALL_OUTPUT_CHAIN = "KOREADERREMOTE_OUT"
 
 local HTTP_STATUS = {
     [200] = "OK",
@@ -95,6 +98,8 @@ if type(runtime) ~= "table" then
         retry_scheduled = false,
         retry_action = nil,
         local_ip = nil,
+        local_ip_cache = nil,
+        local_ip_checked_at = nil,
         connection_url = nil,
         qr_url = nil,
         connection_revision = 0,
@@ -509,42 +514,84 @@ end
 
 -- Network detection ----------------------------------------------------------
 
-function Remote:detectLocalIP()
+function Remote:invalidateLocalIPCache()
+    runtime.local_ip_cache = nil
+    runtime.local_ip_checked_at = nil
+end
+
+local function commandSucceeded(command)
+    local ok, first, second, third = pcall(
+        os.execute,
+        command .. " 2>/dev/null"
+    )
+
+    if not ok then
+        return false
+    end
+
+    -- Support Lua 5.1's numeric result and newer Lua return conventions.
+    return first == true
+        or first == 0
+        or (second == "exit" and third == 0)
+end
+
+function Remote:detectLocalIP(force)
+    local now = os.time()
+    if not force
+        and runtime.local_ip_checked_at
+        and now - runtime.local_ip_checked_at < LOCAL_IP_CACHE_SECONDS then
+        return runtime.local_ip_cache
+    end
+
     -- Preferred method: ask the kernel which local address it would use for
     -- the default IPv4 route. This creates no real network traffic.
-    local socket = require("socket")
-    local udp, err = socket.udp()
+    local socket_ok, socket = pcall(require, "socket")
 
-    if udp then
-        local ok
-        ok, err = udp:setpeername("203.0.113.1", "53")
+    if socket_ok and socket then
+        local detected, address_or_error = pcall(function()
+            local udp = assert(socket.udp())
+            local connected = udp:setpeername("203.0.113.1", "53")
 
-        if ok then
+            if not connected then
+                udp:close()
+                return nil
+            end
+
             local address = udp:getsockname()
             udp:close()
+            return address
+        end)
 
-            if isUsableIPv4(address) then
-                return address
-            end
-        else
-            udp:close()
-            logger.dbg(
-                "KOReaderRemote: UDP route IP detection failed:",
-                err
-            )
+        if detected and isUsableIPv4(address_or_error) then
+            runtime.local_ip_cache = address_or_error
+            runtime.local_ip_checked_at = now
+            return address_or_error
         end
+
+        logger.dbg(
+            "KOReaderRemote: UDP route IP detection failed:",
+            tostring(address_or_error)
+        )
     else
         logger.dbg(
-            "KOReaderRemote: could not create UDP socket for IP detection:",
-            err
+            "KOReaderRemote: LuaSocket unavailable for IP detection:",
+            tostring(socket)
         )
     end
 
     -- Fallback for platforms where the Lua socket route method is unavailable.
+    -- Android may not provide these tools, so each command is best-effort.
     local interface = NetworkMgr.interface
 
-    if not interface and NetworkMgr.getNetworkInterfaceName then
-        interface = NetworkMgr:getNetworkInterfaceName()
+    if not interface and type(NetworkMgr.getNetworkInterfaceName) == "function" then
+        local interface_ok
+        interface_ok, interface = pcall(
+            NetworkMgr.getNetworkInterfaceName,
+            NetworkMgr
+        )
+        if not interface_ok then
+            interface = nil
+        end
     end
 
     local commands = {}
@@ -575,33 +622,37 @@ function Remote:detectLocalIP()
 
             for address in output:gmatch("(%d+%.%d+%.%d+%.%d+)") do
                 if isUsableIPv4(address) then
+                    runtime.local_ip_cache = address
+                    runtime.local_ip_checked_at = now
                     return address
                 end
             end
         end
     end
 
+    runtime.local_ip_cache = nil
+    runtime.local_ip_checked_at = now
     return nil
 end
 
-function Remote:isNetworkReady()
-    -- queryNetworkState updates KOReader's cached connection state. If a
-    -- platform cannot provide it reliably, a successfully detected IPv4
-    -- address remains the final source of truth for this local-only plugin.
+function Remote:isNetworkReady(force_ip_refresh)
+    -- queryNetworkState is KOReader's platform abstraction. An explicit
+    -- disconnected state must win over a cached or shell-detected address.
     local state_ok, connected = pcall(function()
         NetworkMgr:queryNetworkState()
         return NetworkMgr:getConnectionState()
     end)
 
-    local ip = self:detectLocalIP()
-
-    -- A valid address is stronger evidence than KOReader's cached boolean,
-    -- which can remain false briefly after a long suspend.
-    if state_ok and connected == false and ip == nil then
+    if state_ok and connected == false then
         return false, nil
     end
 
-    return ip ~= nil, ip
+    local ip = self:detectLocalIP(force_ip_refresh)
+
+    -- If the KOReader query itself is unavailable, a valid local address is
+    -- still useful as a compatibility fallback. An explicit false remains
+    -- authoritative and was returned above.
+    return connected ~= false and ip ~= nil, ip
 end
 
 function Remote:updateConnectionInfo(ip)
@@ -651,7 +702,7 @@ end
 
 function Remote:getConnectionURL(refresh)
     if refresh then
-        local ready, ip = self:isNetworkReady()
+        local ready, ip = self:isNetworkReady(true)
 
         if not ready then
             runtime.network_ready = false
@@ -798,39 +849,120 @@ end
 
 -- Kindle firewall ------------------------------------------------------------
 
+function Remote:removeFirewallJumps(table_name, chain)
+    local jump = string.format(
+        "iptables -D %s -j %s",
+        table_name,
+        chain
+    )
+
+    while commandSucceeded(jump) do end
+end
+
+function Remote:removeLegacyFirewallRules(port)
+    if not port then
+        return
+    end
+
+    local legacy_rules = {
+        string.format(
+            "iptables -D INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT",
+            port
+        ),
+        string.format(
+            "iptables -D OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT",
+            port
+        ),
+    }
+
+    for _, rule in ipairs(legacy_rules) do
+        while commandSucceeded(rule) do end
+    end
+end
+
+function Remote:prepareFirewallChain(chain)
+    local create_chain = string.format("iptables -N %s", chain)
+    local list_chain = string.format("iptables -L %s -n", chain)
+    local flush_chain = string.format("iptables -F %s", chain)
+
+    if not commandSucceeded(create_chain)
+        and not commandSucceeded(list_chain) then
+        return false
+    end
+
+    return commandSucceeded(flush_chain)
+end
+
+function Remote:deleteFirewallChain(table_name, chain)
+    self:removeFirewallJumps(table_name, chain)
+    commandSucceeded(string.format("iptables -F %s", chain))
+    commandSucceeded(string.format("iptables -X %s", chain))
+end
+
 function Remote:openFirewall(port)
     if not Device:isKindle() or runtime.firewall_port then
         return
     end
 
-    os.execute(string.format(
-        "iptables -A INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT",
+    self:removeLegacyFirewallRules(port)
+    self:deleteFirewallChain("INPUT", FIREWALL_INPUT_CHAIN)
+    self:deleteFirewallChain("OUTPUT", FIREWALL_OUTPUT_CHAIN)
+
+    if not self:prepareFirewallChain(FIREWALL_INPUT_CHAIN)
+        or not self:prepareFirewallChain(FIREWALL_OUTPUT_CHAIN) then
+        logger.warn("KOReaderRemote: could not prepare Kindle firewall chains")
+        self:deleteFirewallChain("INPUT", FIREWALL_INPUT_CHAIN)
+        self:deleteFirewallChain("OUTPUT", FIREWALL_OUTPUT_CHAIN)
+        return
+    end
+
+    local input_rule = string.format(
+        "iptables -A %s -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT",
+        FIREWALL_INPUT_CHAIN,
         port
-    ))
-    os.execute(string.format(
-        "iptables -A OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT",
+    )
+    local output_rule = string.format(
+        "iptables -A %s -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT",
+        FIREWALL_OUTPUT_CHAIN,
         port
-    ))
+    )
+
+    if not commandSucceeded(input_rule)
+        or not commandSucceeded(output_rule) then
+        logger.warn("KOReaderRemote: could not add Kindle firewall rules")
+        self:deleteFirewallChain("INPUT", FIREWALL_INPUT_CHAIN)
+        self:deleteFirewallChain("OUTPUT", FIREWALL_OUTPUT_CHAIN)
+        return
+    end
+
+    local input_jump = string.format(
+        "iptables -I INPUT 1 -j %s",
+        FIREWALL_INPUT_CHAIN
+    )
+    local output_jump = string.format(
+        "iptables -I OUTPUT 1 -j %s",
+        FIREWALL_OUTPUT_CHAIN
+    )
+
+    if not commandSucceeded(input_jump)
+        or not commandSucceeded(output_jump) then
+        logger.warn("KOReaderRemote: could not attach Kindle firewall chains")
+        self:deleteFirewallChain("INPUT", FIREWALL_INPUT_CHAIN)
+        self:deleteFirewallChain("OUTPUT", FIREWALL_OUTPUT_CHAIN)
+        return
+    end
 
     runtime.firewall_port = port
 end
 
 function Remote:closeFirewall()
-    if not Device:isKindle() or not runtime.firewall_port then
+    if not Device:isKindle() then
         return
     end
 
-    local port = runtime.firewall_port
-
-    os.execute(string.format(
-        "iptables -D INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT",
-        port
-    ))
-    os.execute(string.format(
-        "iptables -D OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT",
-        port
-    ))
-
+    self:deleteFirewallChain("INPUT", FIREWALL_INPUT_CHAIN)
+    self:deleteFirewallChain("OUTPUT", FIREWALL_OUTPUT_CHAIN)
+    self:removeLegacyFirewallRules(runtime.firewall_port)
     runtime.firewall_port = nil
 end
 
@@ -1019,6 +1151,7 @@ function Remote:prepareForSleep()
         runtime.sleep_started_at = os.time()
     end
     runtime.sleeping = true
+    self:invalidateLocalIPCache()
 
     self:cancelRetry()
     self:stopServer()
@@ -1047,6 +1180,7 @@ function Remote:beginResumeRecovery()
     end
     runtime.sleep_started_at = nil
     runtime.sleeping = false
+    self:invalidateLocalIPCache()
 
     local manual_recovery_allowed = runtime.manual_session
         and slept_for <= MANUAL_RECOVERY_MAX_SLEEP_SECONDS
@@ -1134,6 +1268,8 @@ function Remote:onNetworkConnecting()
         return
     end
 
+    self:invalidateLocalIPCache()
+
     if self:isRunning() or self:hasStartRequest() then
         runtime.network_ready = false
         self:setState(STATE_WAITING)
@@ -1149,7 +1285,8 @@ function Remote:onNetworkConnected()
         return
     end
 
-    local ready, ip = self:isNetworkReady()
+    self:invalidateLocalIPCache()
+    local ready, ip = self:isNetworkReady(true)
 
     if not ready then
         if self:isRunning() or self:hasStartRequest() then
@@ -1171,6 +1308,7 @@ end
 
 function Remote:onNetworkDisconnected()
     runtime.network_ready = false
+    self:invalidateLocalIPCache()
 
     if runtime.sleeping then
         return
