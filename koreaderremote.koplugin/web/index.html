@@ -988,9 +988,9 @@
 
       <div id="toolbar-actions" aria-label="Remote tools">
         <button class="icon-button" id="footnote-button" type="button"
-                aria-label="Open next footnote" title="Open next footnote" hidden>¹</button>
+                aria-label="Open next footnote" title="Open next footnote">¹</button>
         <button class="icon-button" id="bookmark-button" type="button"
-                aria-label="Open bookmarks" title="Open bookmarks" hidden>🔖</button>
+                aria-label="Open bookmarks" title="Open bookmarks">🔖</button>
         <button class="icon-button" id="note-button" type="button"
                 aria-label="Open note editor" title="Open note editor"
                 data-active="false">✎</button>
@@ -2251,9 +2251,6 @@
       warmthRow.hidden = !capabilities.warmth;
       nightModeRow.hidden = !capabilities.night_mode;
       fullRefreshRow.hidden = !capabilities.full_refresh;
-      footnoteButton.hidden = !capabilities.footnotes;
-      bookmarkButton.hidden = !capabilities.bookmarks;
-
       const hasControls = Boolean(
         capabilities.frontlight
         || capabilities.brightness

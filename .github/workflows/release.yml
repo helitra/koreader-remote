@@ -611,7 +611,7 @@ jobs:
               "${CHECKSUM}" \
               --clobber
             gh release edit "${TAG}" \
-              --title "KOReader Remote ${TAG}" \
+              --title "${TAG}" \
               --notes-file "${NOTES}" \
               "${RELEASE_FLAGS[@]}"
           else
@@ -619,7 +619,7 @@ jobs:
               "${ARCHIVE}" \
               "${CHECKSUM}" \
               --verify-tag \
-              --title "KOReader Remote ${TAG}" \
+              --title "${TAG}" \
               --notes-file "${NOTES}" \
               "${RELEASE_FLAGS[@]}"
           fi
