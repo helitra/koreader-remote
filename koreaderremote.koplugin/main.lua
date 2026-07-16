@@ -46,10 +46,10 @@ local STATE_RETRYING = "retrying"
 local STATE_ERROR = "error"
 
 -- Keep checking until KOReader reports a usable network or the user stops the
--- remote. Some Kindle/KOReader combinations do not emit NetworkConnected
--- after a long standby.
-local RETRY_DELAYS = { 2, 5, 10, 20, 30 }
-local RECOVERY_RETRY_SECONDS = 15
+-- remote. Network events normally wake recovery immediately; these retries
+-- are only a low-frequency fallback for devices that miss those events.
+local RETRY_DELAYS = { 2, 5, 10, 20, 40, 80, 160, 300 }
+local RECOVERY_RETRY_SECONDS = 300
 
 local HTTP_STATUS = {
     [200] = "OK",

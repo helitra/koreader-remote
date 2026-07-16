@@ -4,11 +4,11 @@
 
 ### Added
 
-- Added Stable and Beta update channels with a persistent channel selection.
+- Added Stable and Dev update channels with a persistent channel selection.
 - Added build metadata containing channel, release version, build ID, and
   commit identity to every packaged plugin.
-- Added Beta prerelease packaging from the `dev` branch with checksum-verified
-  ZIP artifacts.
+- Added checksum-verified wireless Dev builds from the `dev` branch without
+  creating a GitHub Release for every commit.
 
 ### Changed
 

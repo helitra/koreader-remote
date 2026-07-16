@@ -1,7 +1,6 @@
 -- KOReader Remote self-updater.
 --
--- Checks the selected GitHub release channel only after an explicit user
--- action.
+-- Checks the selected update channel only after an explicit user action.
 -- Downloads the plugin ZIP and checksum, validates the archive with KOReader's
 -- bundled libarchive wrapper, installs through a sibling staging directory,
 -- and preserves the previous plugin directory until the new version starts.
@@ -33,8 +32,8 @@ Updater.__index = Updater
 
 local GITHUB_STABLE_API_URL =
     "https://api.github.com/repos/helitra/koreader-remote/releases/latest"
-local GITHUB_BETA_API_URL =
-    "https://api.github.com/repos/helitra/koreader-remote/releases?per_page=30"
+local DEV_MANIFEST_URL =
+    "https://raw.githubusercontent.com/helitra/koreader-remote/dev-updates/manifest.json"
 local PLUGIN_FOLDER_NAME = "koreaderremote.koplugin"
 local UPDATE_WORK_DIR =
     DataStorage:getDataDir() .. "/koreaderremote-update"
@@ -705,9 +704,65 @@ function Updater:makeCandidate(release, channel)
     return candidate
 end
 
+function Updater:makeDevCandidate(manifest)
+    if type(manifest) ~= "table"
+        or manifest.channel ~= "dev"
+        or manifest.source ~= "dev" then
+        return nil, "The Dev update manifest has invalid build metadata."
+    end
+
+    local version = tostring(manifest.version or "")
+    local dev_number = tostring(manifest.build_id or "")
+        :match("^dev%.(%d+)$")
+    local release_version = tostring(manifest.release_version or "")
+    local commit = tostring(manifest.commit or "")
+
+    if not version:match("^%d+%.%d+%.%d+$")
+        or not dev_number
+        or release_version ~= version .. "-dev." .. dev_number
+        or not commit:match("^[0-9a-fA-F]+$")
+        or #commit < 7
+        or #commit > 64 then
+        return nil, "The Dev update manifest has invalid build identity."
+    end
+
+    local candidate = {
+        version = version,
+        release_version = release_version,
+        tag = "v" .. release_version,
+        channel = "dev",
+        source = "dev",
+        dev_number = dev_number,
+        build_id = "dev." .. dev_number,
+        commit = commit,
+        archive_name = tostring(manifest.archive_name or ""),
+        checksum_name = tostring(manifest.checksum_name or ""),
+        archive_url = tostring(manifest.archive_url or ""),
+        checksum_url = tostring(manifest.checksum_url or ""),
+        archive_size = tonumber(manifest.archive_size),
+        expected_digest = tostring(manifest.sha256 or ""):lower(),
+    }
+
+    if candidate.archive_name ~= "koreaderremote-v" .. release_version .. ".zip"
+        or candidate.checksum_name ~= candidate.archive_name .. ".sha256"
+        or not candidate.archive_url:match("^https?://")
+        or not candidate.checksum_url:match("^https?://")
+        or not candidate.expected_digest:match("^[0-9a-f]+$")
+        or #candidate.expected_digest ~= 64 then
+        return nil, "The Dev update manifest has invalid download links."
+    end
+
+    candidate.comparison = self:compareCandidate(candidate)
+    if candidate.comparison == nil then
+        return nil, "The installed version number could not be compared."
+    end
+
+    return candidate
+end
+
 function Updater:fetchLatestRelease()
     local api_url = self.channel == "dev"
-        and GITHUB_BETA_API_URL
+        and DEV_MANIFEST_URL
         or GITHUB_STABLE_API_URL
     local body, err, headers, code = requestMemory(
         api_url,
@@ -729,6 +784,15 @@ function Updater:fetchLatestRelease()
         return nil, "GitHub returned an invalid update response."
     end
 
+    if self.channel == "dev" then
+        local ok, manifest = pcall(JSON.decode, body)
+        if not ok or type(manifest) ~= "table" then
+            return nil, "The Dev update manifest is invalid."
+        end
+
+        return self:makeDevCandidate(manifest)
+    end
+
     if self.channel == "stable" then
         if release.prerelease == true or release.draft == true then
             return nil, "GitHub returned an invalid stable release."
@@ -741,32 +805,6 @@ function Updater:fetchLatestRelease()
         return candidate
     end
 
-    local latest
-    for _, dev_release in ipairs(release) do
-        if dev_release.prerelease == true and dev_release.draft ~= true then
-            local candidate = self:makeCandidate(dev_release, "dev")
-            local version_comparison = candidate and compareVersions(
-                latest and latest.version or "0.0.0",
-                candidate.version
-            )
-            local candidate_number = tonumber(candidate and candidate.dev_number)
-                or 0
-            local latest_number = tonumber(latest and latest.dev_number) or 0
-
-            if candidate and (not latest
-                or version_comparison > 0
-                or (version_comparison == 0
-                    and candidate_number > latest_number)) then
-                latest = candidate
-            end
-        end
-    end
-
-    if not latest then
-        return nil, "No dev release is currently available."
-    end
-
-    return latest
 end
 
 function Updater:checkForUpdates()
@@ -1263,6 +1301,11 @@ function Updater:downloadCandidate(candidate)
     )
     if not expected_digest then
         return nil, checksum_err
+    end
+
+    if candidate.expected_digest
+        and expected_digest ~= candidate.expected_digest then
+        return nil, "The Dev manifest does not match its checksum."
     end
 
     local archive_content, archive_read_err = readFile(archive_path)

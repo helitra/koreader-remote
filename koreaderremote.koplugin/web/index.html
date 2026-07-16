@@ -1200,6 +1200,8 @@
     const HOLD_DELAY_MS = 500;
     const SEND_DELAY_MS = 170;
     const NOTE_POLL_MS = 1800;
+    const CONNECTION_CHECK_MS = 15000;
+    const RECONNECT_DELAYS_MS = [3000, 10000, 30000, 120000, 300000];
     const NOTE_SYNC_DEBOUNCE_MS = 700;
     const OLED_STORAGE_KEY = "koreaderRemoteOledMode";
     const REPEAT_PHASES = [
@@ -1280,6 +1282,8 @@
     let pageRequestRunning = false;
     let reconnectTimer = null;
     let failedPings = 0;
+    let connectionCheckRunning = false;
+    let connectionCheckRequested = false;
     let capabilities = null;
     let deviceState = null;
     let activeHold = null;
@@ -1309,6 +1313,17 @@
 
     function scheduleConnectionCheck(delay) {
       window.clearTimeout(reconnectTimer);
+      if (document.hidden) {
+        reconnectTimer = null;
+        return;
+      }
+
+      if (connectionCheckRunning) {
+        connectionCheckRequested = true;
+        reconnectTimer = null;
+        return;
+      }
+
       reconnectTimer = window.setTimeout(checkConnection, delay);
     }
 
@@ -1494,6 +1509,16 @@
 
     function scheduleNotePoll() {
       window.clearTimeout(notePollTimer);
+      notePollTimer = null;
+
+      if (
+        document.hidden
+        || !document.body.classList.contains("note-open")
+        || !noteSession
+      ) {
+        return;
+      }
+
       notePollTimer = window.setTimeout(async () => {
         await loadNoteSession(false);
         scheduleNotePoll();
@@ -1504,11 +1529,14 @@
       document.body.classList.add("note-open");
       noteView.hidden = false;
       await loadNoteSession(false);
+      scheduleNotePoll();
     }
 
     function closeNoteView() {
       document.body.classList.remove("note-open");
       noteView.hidden = true;
+      window.clearTimeout(notePollTimer);
+      notePollTimer = null;
     }
 
     function scheduleNoteAutoSync() {
@@ -2393,6 +2421,19 @@
     }
 
     async function checkConnection() {
+      if (document.hidden) {
+        return;
+      }
+
+      if (connectionCheckRunning) {
+        connectionCheckRequested = true;
+        return;
+      }
+
+      connectionCheckRunning = true;
+      connectionCheckRequested = false;
+      let nextDelay = CONNECTION_CHECK_MS;
+
       try {
         const info = await getJSON("/api/ping");
         failedPings = 0;
@@ -2402,7 +2443,6 @@
         }
 
         await loadDeviceState();
-        loadNoteSession(false);
 
         if (info.document_open === false) {
           setStatus("Open a book on your reader", true);
@@ -2410,7 +2450,6 @@
           setStatus("Connected · v" + info.version, true);
         }
 
-        scheduleConnectionCheck(15000);
       } catch (error) {
         failedPings += 1;
         console.debug("KOReader Remote reconnect check failed:", error);
@@ -2421,7 +2460,16 @@
           setStatus("Reconnecting…", false);
         }
 
-        scheduleConnectionCheck(3000);
+        nextDelay = RECONNECT_DELAYS_MS[
+          Math.min(failedPings - 1, RECONNECT_DELAYS_MS.length - 1)
+        ];
+      } finally {
+        connectionCheckRunning = false;
+        if (connectionCheckRequested) {
+          connectionCheckRequested = false;
+          nextDelay = 0;
+        }
+        scheduleConnectionCheck(nextDelay);
       }
     }
 
@@ -2743,8 +2791,17 @@
     });
 
     document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        window.clearTimeout(notePollTimer);
+        notePollTimer = null;
+        return;
+      }
+
       if (!document.hidden) {
         checkConnection();
+        scheduleNotePoll();
 
         if (document.body.classList.contains("bookmark-open")) {
           loadBookmarks();
@@ -2753,8 +2810,12 @@
     });
 
     window.addEventListener("online", checkConnection);
+    window.addEventListener("offline", () => {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      setStatus("Offline", false);
+    });
     applyOledMode(readOledPreference());
-    scheduleNotePoll();
     checkConnection();
   </script>
 </body>

@@ -177,7 +177,7 @@ jobs:
           grep -Fq 'Update channel: %s' "${MAIN}"
           grep -Fq 'loadfile(PLUGIN_DIR .. "/build.lua")' "${MAIN}"
           grep -Fq 'api.github.com/repos/helitra/koreader-remote/releases/latest' "${UPDATER}"
-          grep -Fq 'api.github.com/repos/helitra/koreader-remote/releases?per_page=30' "${UPDATER}"
+          grep -Fq 'raw.githubusercontent.com/helitra/koreader-remote/dev-updates/manifest.json' "${UPDATER}"
           grep -Fq 'The update build metadata does not match its release.' "${UPDATER}"
           grep -Fq 'candidate.commit = metadata.commit' "${UPDATER}"
           grep -Fq 'instance.backup_dir = instance.plugin_dir .. ".previous"' "${UPDATER}"
@@ -567,8 +567,54 @@ jobs:
           (dist / "release-notes.md").write_text(notes, encoding="utf-8")
           PY
 
+      - name: Publish current Dev build
+        if: github.ref_name == 'dev' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RELEASE_VERSION="$(sed -n 's/.*release_version = \"\([^\"]*\)\".*/\1/p' koreaderremote.koplugin/build.lua)"
+          ARCHIVE="dist/koreaderremote-v${RELEASE_VERSION}.zip"
+          CHECKSUM="${ARCHIVE}.sha256"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+actions@users.noreply.github.com"
+          git fetch origin dev-updates || true
+          git checkout --orphan dev-updates
+          git rm -rf . || true
+          cp "${ARCHIVE}" "koreaderremote-v${RELEASE_VERSION}.zip"
+          cp "${CHECKSUM}" "koreaderremote-v${RELEASE_VERSION}.zip.sha256"
+          python3 - "${RELEASE_VERSION}" "${GITHUB_SHA}" <<'PY'
+          from pathlib import Path
+          import hashlib
+          import sys
+
+          release_version, commit = sys.argv[1:]
+          archive_name = f"koreaderremote-v{release_version}.zip"
+          digest = hashlib.sha256(Path(archive_name).read_bytes()).hexdigest()
+          Path("manifest.json").write_text(
+              "{\n"
+              '  "channel": "dev",\n'
+              '  "source": "dev",\n'
+              f'  "version": "{release_version.rsplit("-", 1)[0]}",\n'
+              f'  "release_version": "{release_version}",\n'
+              f'  "build_id": "dev.{release_version.rsplit(".", 1)[-1]}",\n'
+              f'  "commit": "{commit}",\n'
+              f'  "archive_name": "{archive_name}",\n'
+              f'  "checksum_name": "{archive_name}.sha256",\n'
+              f'  "archive_url": "https://raw.githubusercontent.com/helitra/koreader-remote/dev-updates/{archive_name}",\n'
+              f'  "checksum_url": "https://raw.githubusercontent.com/helitra/koreader-remote/dev-updates/{archive_name}.sha256",\n'
+              f'  "archive_size": {Path(archive_name).stat().st_size},\n'
+              f'  "sha256": "{digest}"\n'
+              "}\n",
+              encoding="utf-8",
+          )
+          PY
+          git add .
+          git commit -m "Publish Dev build ${RELEASE_VERSION}"
+          git push origin HEAD:dev-updates --force
+
       - name: Create tag and GitHub release
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == 'dev')
+        if: github.event_name == 'workflow_dispatch' && github.ref_name == 'main'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
