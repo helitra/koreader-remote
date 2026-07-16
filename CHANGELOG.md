@@ -7,8 +7,8 @@
 - Added Stable and Dev update channels with a persistent channel selection.
 - Added build metadata containing channel, release version, build ID, and
   commit identity to every packaged plugin.
-- Added checksum-verified wireless Dev builds from the `dev` branch without
-  creating a GitHub Release for every commit.
+- Added wireless Dev updates directly from the exact `dev` branch commit
+  without creating a GitHub Release or a separate artifact branch.
 
 ### Changed
 

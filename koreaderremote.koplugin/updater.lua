@@ -1,9 +1,8 @@
 -- KOReader Remote self-updater.
 --
 -- Checks the selected update channel only after an explicit user action.
--- Downloads the plugin ZIP and checksum, validates the archive with KOReader's
--- bundled libarchive wrapper, installs through a sibling staging directory,
--- and preserves the previous plugin directory until the new version starts.
+-- Stable downloads use release assets; Dev downloads use an exact Git commit
+-- archive. Both paths validate the archive before replacing the plugin.
 
 local Archiver = require("ffi/archiver")
 local ffi = require("ffi")
@@ -32,8 +31,10 @@ Updater.__index = Updater
 
 local GITHUB_STABLE_API_URL =
     "https://api.github.com/repos/helitra/koreader-remote/releases/latest"
-local DEV_MANIFEST_URL =
-    "https://raw.githubusercontent.com/helitra/koreader-remote/dev/dev-updates/manifest.json"
+local GITHUB_DEV_COMMIT_API_URL =
+    "https://api.github.com/repos/helitra/koreader-remote/commits/dev"
+local GITHUB_DEV_ARCHIVE_URL =
+    "https://codeload.github.com/helitra/koreader-remote/zip/"
 local PLUGIN_FOLDER_NAME = "koreaderremote.koplugin"
 local UPDATE_WORK_DIR =
     DataStorage:getDataDir() .. "/koreaderremote-update"
@@ -607,55 +608,28 @@ function Updater:readBuildMetadata(path)
 end
 
 function Updater:compareCandidate(candidate)
-    local comparison = compareVersions(self.installed_version, candidate.version)
-    if comparison == nil then
-        return nil
-    end
-
     if candidate.channel == "stable" and self.installed_channel == "dev" then
-        -- Returning to Stable may require moving back to its release version.
+        -- Returning to Stable is always a channel change.
         return -1
     end
 
     if self.installed_channel ~= candidate.channel then
-        -- Stable can opt into a newer or same-version Dev build.
-        return comparison <= 0 and -1 or 1
+        -- A stable installation can opt into any Dev commit.
+        return candidate.channel == "dev" and -1 or 0
     end
 
-    if comparison ~= 0 then
-        return comparison
+    if candidate.channel == "dev" then
+        return tostring(self.installed_commit) == tostring(candidate.commit)
+            and 0
+            or -1
     end
 
-    if candidate.channel == "stable" then
-        return 0
-    end
-
-    local installed_dev_number = tonumber(
-        tostring(self.installed_build_id):match("^[%a]+%.(%d+)$")
-    ) or 0
-    local candidate_dev_number = tonumber(candidate.dev_number) or 0
-
-    if installed_dev_number < candidate_dev_number then
-        return -1
-    elseif installed_dev_number > candidate_dev_number then
-        return 1
-    end
-
-    return self.installed_build_id == candidate.build_id and 0 or 1
+    return compareVersions(self.installed_version, candidate.version)
 end
 
 function Updater:makeCandidate(release, channel)
     local tag = tostring(release.tag_name or "")
-    local version, dev_number
-
-    if channel == "dev" then
-        version, dev_number = tag:match("^v(%d+%.%d+%.%d+)-dev%.(%d+)$")
-            or tag:match("^v(%d+%.%d+%.%d+)-beta%.(%d+)$")
-    end
-
-    if channel == "stable" then
-        version = tag:match("^v(%d+%.%d+%.%d+)$")
-    end
+    local version = tag:match("^v(%d+%.%d+%.%d+)$")
 
     if not version then
         return nil
@@ -663,24 +637,16 @@ function Updater:makeCandidate(release, channel)
 
     local candidate = {
         version = version,
-        release_version = dev_number
-            and version .. "-dev." .. dev_number
-            or version,
+        release_version = version,
         tag = tag,
         channel = channel,
-        source = channel == "dev" and "dev" or "main",
-        dev_number = dev_number,
-        build_id = dev_number and "dev." .. dev_number or "stable",
+        source = "main",
+        build_id = "stable",
         commit = tostring(release.body or ""):match(
             "[Cc]ommit:%s*([0-9a-fA-F]+)"
         ),
         release = release,
     }
-
-    if channel == "dev" and (not candidate.commit
-        or #candidate.commit < 7 or #candidate.commit > 64) then
-        return nil, "The dev release does not identify its commit."
-    end
 
     candidate.comparison = self:compareCandidate(candidate)
     if candidate.comparison == nil then
@@ -704,65 +670,42 @@ function Updater:makeCandidate(release, channel)
     return candidate
 end
 
-function Updater:makeDevCandidate(manifest)
-    if type(manifest) ~= "table"
-        or manifest.channel ~= "dev"
-        or manifest.source ~= "dev" then
-        return nil, "The Dev update manifest has invalid build metadata."
+function Updater:makeDevCandidate(commit_info, version)
+    local commit = tostring(commit_info and commit_info.sha or "")
+        :lower()
+
+    if not commit:match("^[0-9a-f]+$") or #commit ~= 40 then
+        return nil, "GitHub returned an invalid Dev commit identity."
     end
 
-    local version = tostring(manifest.version or "")
-    local dev_number = tostring(manifest.build_id or "")
-        :match("^dev%.(%d+)$")
-    local release_version = tostring(manifest.release_version or "")
-    local commit = tostring(manifest.commit or "")
-
-    if not version:match("^%d+%.%d+%.%d+$")
-        or not dev_number
-        or release_version ~= version .. "-dev." .. dev_number
-        or not commit:match("^[0-9a-fA-F]+$")
-        or #commit < 7
-        or #commit > 64 then
-        return nil, "The Dev update manifest has invalid build identity."
+    version = trim(version)
+    if not version:match("^%d+%.%d+%.%d+$") then
+        return nil, "GitHub returned an invalid Dev version."
     end
 
+    local short_commit = commit:sub(1, 12)
+    local archive_name = "koreader-remote-" .. commit .. ".zip"
     local candidate = {
         version = version,
-        release_version = release_version,
-        tag = "v" .. release_version,
+        release_version = version .. "-dev." .. commit:sub(1, 7),
+        tag = "dev@" .. short_commit,
         channel = "dev",
         source = "dev",
-        dev_number = dev_number,
-        build_id = "dev." .. dev_number,
+        build_id = "dev." .. short_commit,
         commit = commit,
-        archive_name = tostring(manifest.archive_name or ""),
-        checksum_name = tostring(manifest.checksum_name or ""),
-        archive_url = tostring(manifest.archive_url or ""),
-        checksum_url = tostring(manifest.checksum_url or ""),
-        archive_size = tonumber(manifest.archive_size),
-        expected_digest = tostring(manifest.sha256 or ""):lower(),
+        archive_name = archive_name,
+        archive_url = GITHUB_DEV_ARCHIVE_URL .. commit,
+        archive_root = "koreader-remote-" .. commit,
+        source_archive = true,
     }
 
-    if candidate.archive_name ~= "koreaderremote-v" .. release_version .. ".zip"
-        or candidate.checksum_name ~= candidate.archive_name .. ".sha256"
-        or not candidate.archive_url:match("^https?://")
-        or not candidate.checksum_url:match("^https?://")
-        or not candidate.expected_digest:match("^[0-9a-f]+$")
-        or #candidate.expected_digest ~= 64 then
-        return nil, "The Dev update manifest has invalid download links."
-    end
-
     candidate.comparison = self:compareCandidate(candidate)
-    if candidate.comparison == nil then
-        return nil, "The installed version number could not be compared."
-    end
-
     return candidate
 end
 
 function Updater:fetchLatestRelease()
     local api_url = self.channel == "dev"
-        and DEV_MANIFEST_URL
+        and GITHUB_DEV_COMMIT_API_URL
         or GITHUB_STABLE_API_URL
     local body, err, headers, code = requestMemory(
         api_url,
@@ -785,12 +728,18 @@ function Updater:fetchLatestRelease()
     end
 
     if self.channel == "dev" then
-        local ok, manifest = pcall(JSON.decode, body)
-        if not ok or type(manifest) ~= "table" then
-            return nil, "The Dev update manifest is invalid."
+        local version_body, version_err = requestMemory(
+            "https://raw.githubusercontent.com/helitra/koreader-remote/"
+                .. tostring(release.sha or "") .. "/VERSION",
+            128,
+            "text/plain"
+        )
+        if not version_body then
+            return nil, "Could not read the Dev VERSION file: "
+                .. tostring(version_err)
         end
 
-        return self:makeDevCandidate(manifest)
+        return self:makeDevCandidate(release, version_body)
     end
 
     if self.channel == "stable" then
@@ -848,10 +797,13 @@ function Updater:checkForUpdates()
                     _(
                         "KOReader Remote is up to date.\n\n"
                         .. "Installed build: %s\n"
-                        .. "Latest release: v%s\n"
+                        .. "%s: v%s\n"
                         .. "Update channel: %s"
                     ),
                     self:getInstalledBuildLabel(),
+                    self.channel == "dev"
+                        and _("Latest Dev build")
+                        or _("Latest Stable release"),
                     candidate.release_version,
                     self:getChannelLabel()
                 ))
@@ -864,10 +816,13 @@ function Updater:checkForUpdates()
                         "The installed version is newer than the latest "
                         .. "public release.\n\n"
                         .. "Installed build: %s\n"
-                        .. "Latest release: v%s\n"
+                        .. "%s: v%s\n"
                         .. "Update channel: %s"
                     ),
                     self:getInstalledBuildLabel(),
+                    self.channel == "dev"
+                        and _("Latest Dev build")
+                        or _("Latest Stable release"),
                     candidate.release_version,
                     self:getChannelLabel()
                 ))
@@ -923,7 +878,7 @@ function Updater:parseChecksum(content, expected_filename)
     return digest:lower()
 end
 
-function Updater:validateArchivePath(path)
+function Updater:validateArchivePath(path, archive_root)
     if type(path) ~= "string"
         or path == ""
         or path:find("\\", 1, true)
@@ -933,22 +888,48 @@ function Updater:validateArchivePath(path)
         return nil, "The archive contains an unsafe path."
     end
 
-    for component in path:gmatch("[^/]+") do
+    local normalized = path
+    if archive_root then
+        if path == archive_root then
+            return true, ""
+        end
+
+        local prefix = archive_root .. "/"
+        if path:sub(1, #prefix) ~= prefix then
+            return nil, "The Dev archive has an unexpected root."
+        end
+
+        normalized = path:sub(#prefix + 1)
+    end
+
+    if normalized == "" then
+        return true, normalized
+    end
+
+    for component in normalized:gmatch("[^/]+") do
         if component == "." or component == ".." or component == "" then
             return nil, "The archive contains path traversal."
         end
     end
 
-    if path ~= PLUGIN_FOLDER_NAME
-        and path:sub(1, #PLUGIN_FOLDER_NAME + 1)
+    if archive_root and normalized ~= PLUGIN_FOLDER_NAME
+        and normalized:sub(1, #PLUGIN_FOLDER_NAME + 1)
+            ~= PLUGIN_FOLDER_NAME .. "/" then
+        -- GitHub source archives also contain repository files outside the
+        -- plugin. They are ignored, never extracted.
+        return true, nil
+    end
+
+    if normalized ~= PLUGIN_FOLDER_NAME
+        and normalized:sub(1, #PLUGIN_FOLDER_NAME + 1)
             ~= PLUGIN_FOLDER_NAME .. "/" then
         return nil, "The archive contains files outside the plugin folder."
     end
 
-    return true
+    return true, normalized
 end
 
-function Updater:indexArchive(archive_path)
+function Updater:indexArchive(archive_path, archive_root)
     local archive = Archiver.Reader:new()
 
     if not archive:open(archive_path) then
@@ -968,44 +949,56 @@ function Updater:indexArchive(archive_path)
             return nil, "The archive contains too many files."
         end
 
-        local ok, path_err = self:validateArchivePath(entry.path)
+        local ok, normalized_or_err = self:validateArchivePath(
+            entry.path,
+            archive_root
+        )
         if not ok then
             archive:close()
-            return nil, path_err
+            return nil, normalized_or_err
         end
 
-        if seen[entry.path] then
+        local normalized_path = normalized_or_err
+        if normalized_path and seen[normalized_path] then
             archive:close()
             return nil, "The archive contains duplicate paths."
         end
-        seen[entry.path] = true
 
-        if entry.mode ~= "file" and entry.mode ~= "directory" then
-            archive:close()
-            return nil, "The archive contains unsupported file types."
+        if normalized_path then
+            seen[normalized_path] = true
         end
 
-        local size = tonumber(entry.size) or 0
-
-        if size < 0 or size > MAX_SINGLE_FILE_BYTES then
-            archive:close()
-            return nil, "The archive contains an unexpectedly large file."
-        end
-
-        if entry.mode == "file" then
-            extracted_bytes = extracted_bytes + size
-
-            if extracted_bytes > MAX_EXTRACTED_BYTES then
+        if not normalized_path then
+            -- Ignore files outside koreaderremote.koplugin in a source ZIP.
+        else
+            if entry.mode ~= "file" and entry.mode ~= "directory" then
                 archive:close()
-                return nil, "The extracted update would be too large."
+                return nil, "The archive contains unsupported file types."
             end
-        end
 
-        entries[#entries + 1] = {
-            path = entry.path,
-            mode = entry.mode,
-            size = size,
-        }
+            local size = tonumber(entry.size) or 0
+
+            if size < 0 or size > MAX_SINGLE_FILE_BYTES then
+                archive:close()
+                return nil, "The archive contains an unexpectedly large file."
+            end
+
+            if entry.mode == "file" then
+                extracted_bytes = extracted_bytes + size
+
+                if extracted_bytes > MAX_EXTRACTED_BYTES then
+                    archive:close()
+                    return nil, "The extracted update would be too large."
+                end
+            end
+
+            entries[#entries + 1] = {
+                path = entry.path,
+                normalized_path = normalized_path,
+                mode = entry.mode,
+                size = size,
+            }
+        end
     end
 
     archive:close()
@@ -1041,9 +1034,9 @@ function Updater:extractArchive(archive_path, entries)
     archive:open(archive_path)
 
     for _, entry in ipairs(entries) do
-        local relative = entry.path == PLUGIN_FOLDER_NAME
+        local relative = entry.normalized_path == PLUGIN_FOLDER_NAME
             and ""
-            or entry.path:sub(#PLUGIN_FOLDER_NAME + 2)
+            or entry.normalized_path:sub(#PLUGIN_FOLDER_NAME + 2)
 
         if relative ~= "" then
             local destination = self.staging_dir .. "/" .. relative
@@ -1088,6 +1081,32 @@ function Updater:extractArchive(archive_path, entries)
     end
 
     archive:close()
+    return true
+end
+
+function Updater:writeDevBuildMetadata(candidate)
+    if not candidate.source_archive then
+        return true
+    end
+
+    local content = table.concat({
+        "-- Build metadata is assigned to the exact Dev commit by the updater.",
+        "return {",
+        '    channel = "dev",',
+        '    source = "dev",',
+        '    version = "' .. candidate.version .. '",',
+        '    release_version = "' .. candidate.release_version .. '",',
+        '    build_id = "' .. candidate.build_id .. '",',
+        '    commit = "' .. candidate.commit .. '",',
+        "}",
+        "",
+    }, "\n")
+
+    local ok, err = writeFile(self.staging_dir .. "/build.lua", content)
+    if not ok then
+        return nil, "Could not write Dev build metadata: " .. tostring(err)
+    end
+
     return true
 end
 
@@ -1268,8 +1287,6 @@ function Updater:downloadCandidate(candidate)
 
     local archive_path =
         UPDATE_WORK_DIR .. "/" .. candidate.archive_name
-    local checksum_path =
-        UPDATE_WORK_DIR .. "/" .. candidate.checksum_name
 
     ok, err = requestFile(
         candidate.archive_url,
@@ -1279,6 +1296,38 @@ function Updater:downloadCandidate(candidate)
     if not ok then
         return nil, "Could not download the plugin ZIP: " .. tostring(err)
     end
+
+    if candidate.source_archive then
+        local entries, index_err = self:indexArchive(
+            archive_path,
+            candidate.archive_root
+        )
+        if not entries then
+            return nil, index_err
+        end
+
+        ok, err = self:extractArchive(archive_path, entries)
+        if not ok then
+            return nil, err
+        end
+
+        ok, err = self:writeDevBuildMetadata(candidate)
+        if not ok then
+            removeTree(self.staging_dir)
+            return nil, err
+        end
+
+        ok, err = self:validateStaging(candidate)
+        if not ok then
+            removeTree(self.staging_dir)
+            return nil, err
+        end
+
+        return true
+    end
+
+    local checksum_path =
+        UPDATE_WORK_DIR .. "/" .. candidate.checksum_name
 
     ok, err = requestFile(
         candidate.checksum_url,
@@ -1323,7 +1372,10 @@ function Updater:downloadCandidate(candidate)
         return nil, "The downloaded ZIP failed its SHA-256 check."
     end
 
-    local entries, index_err = self:indexArchive(archive_path)
+    local entries, index_err = self:indexArchive(
+        archive_path,
+        candidate.archive_root
+    )
     if not entries then
         return nil, index_err
     end
