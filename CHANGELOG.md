@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.4
+
+### Fixed
+
+- Hardened platform-aware network recovery and local IP detection.
+- Added safer Kindle firewall chain management with verified cleanup.
+
 ## v0.9.3
 
 ### Fixed
