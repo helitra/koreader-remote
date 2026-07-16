@@ -1,0 +1,14 @@
+{
+  "channel": "dev",
+  "source": "dev",
+  "version": "0.9.2",
+  "release_version": "0.9.2-dev.74",
+  "build_id": "dev.74",
+  "commit": "fedadfd460e683c658a4f3d53cc2611312146e27",
+  "archive_name": "koreaderremote-v0.9.2-dev.74.zip",
+  "checksum_name": "koreaderremote-v0.9.2-dev.74.zip.sha256",
+  "archive_url": "https://raw.githubusercontent.com/helitra/koreader-remote/dev/dev-updates/koreaderremote-v0.9.2-dev.74.zip",
+  "checksum_url": "https://raw.githubusercontent.com/helitra/koreader-remote/dev/dev-updates/koreaderremote-v0.9.2-dev.74.zip.sha256",
+  "archive_size": 45929,
+  "sha256": "ffda1e819ec4463202676d10555bc48613f0b6e4c7c36cee317f8890bee0b4d5"
+}
