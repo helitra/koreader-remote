@@ -277,8 +277,8 @@ jobs:
           grep -Fq 'id="footnote-button"' "${INDEX}"
           grep -Fq 'id="oled-button"' "${INDEX}"
           grep -Fq 'id="note-view"' "${INDEX}"
-          grep -Fq 'Pull from Kindle' "${INDEX}"
-          grep -Fq 'Push to Kindle' "${INDEX}"
+          grep -Fq 'Pull from KOReader' "${INDEX}"
+          grep -Fq 'Push to KOReader' "${INDEX}"
           grep -Fq 'Save note' "${INDEX}"
           grep -Fq '/api/v1/note-session/save' "${INDEX}"
           grep -Fq ':root[data-oled="true"]' "${INDEX}"
@@ -423,8 +423,8 @@ jobs:
               'id="footnote-button"',
               'id="oled-button"',
               'id="note-view"',
-              'Pull from Kindle',
-              'Push to Kindle',
+              'Pull from KOReader',
+              'Push to KOReader',
               'Save note',
               '/api/v1/note-session/save',
               ':root[data-oled="true"]',

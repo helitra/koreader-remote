@@ -15,6 +15,9 @@
 - The updater now displays and validates the selected channel and exact build
   identity before installation.
 - Plugin status and the local API now expose the installed build identity.
+- Note drafts now sync automatically from the web editor to KOReader after a
+  short typing pause, while revision checks protect simultaneous edits.
+- Renamed the note editor's Kindle actions to KOReader actions.
 
 ## v0.9.1
 

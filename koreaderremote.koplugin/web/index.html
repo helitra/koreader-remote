@@ -1112,16 +1112,16 @@
         <div id="note-message" role="status" data-error="false"></div>
 
         <p class="note-help">
-          Push updates the open Kindle draft without saving it. Save note
-          stores the current draft permanently in KOReader.
+          Changes are synced automatically to the open KOReader note draft.
+          Save note stores the current draft permanently in KOReader.
         </p>
 
         <div class="note-actions">
           <button class="note-action-button" id="note-pull" type="button">
-            ↓ Pull from Kindle
+            ↓ Pull from KOReader
           </button>
           <button class="note-action-button" id="note-push" type="button">
-            ↑ Push to Kindle
+            ↑ Push to KOReader
           </button>
           <button class="note-action-button primary" id="note-save" type="button">
             Save note
@@ -1200,6 +1200,7 @@
     const HOLD_DELAY_MS = 500;
     const SEND_DELAY_MS = 170;
     const NOTE_POLL_MS = 1800;
+    const NOTE_SYNC_DEBOUNCE_MS = 700;
     const OLED_STORAGE_KEY = "koreaderRemoteOledMode";
     const REPEAT_PHASES = [
       { until: 1500, interval: 420 },
@@ -1286,6 +1287,11 @@
     let noteLoadedRevision = null;
     let noteEditorDirty = false;
     let notePollTimer = null;
+    let noteSyncTimer = null;
+    let noteSyncRunning = false;
+    let noteSyncPromise = null;
+    let noteInputGeneration = 0;
+    let noteSyncConflict = false;
     let bookmarkBook = null;
     let bookmarkFilter = "all";
     let bookmarkQuery = "";
@@ -1415,13 +1421,14 @@
       if (!noteSession) {
         noteLoadedRevision = null;
         noteText.dataset.sessionId = "";
+        noteSyncConflict = false;
 
         if (session && session.result === "saved") {
           noteEmptyTitle.textContent = "Note saved";
           noteEmptyText.textContent = "The note was saved in KOReader.";
         } else if (session && session.result === "cancelled") {
           noteEmptyTitle.textContent = "Note cancelled";
-          noteEmptyText.textContent = "The open Kindle draft was discarded.";
+          noteEmptyText.textContent = "The open KOReader draft was discarded.";
         } else {
           noteEmptyTitle.textContent = "No note selected";
           noteEmptyText.innerHTML =
@@ -1438,16 +1445,34 @@
       noteExcerpt.textContent = noteSession.excerpt || "";
 
       const sessionChanged = noteText.dataset.sessionId !== noteSession.id;
+      const remoteChangedWhileEditing = Boolean(
+        noteEditorDirty
+        && !replaceEditor
+        && !sessionChanged
+        && noteLoadedRevision !== null
+        && noteSession.revision !== noteLoadedRevision
+      );
+
+      if (remoteChangedWhileEditing) {
+        noteSyncConflict = true;
+        setNoteMessage(
+          "KOReader changed this draft. Pull it before continuing.",
+          true
+        );
+        return;
+      }
+
       if (replaceEditor || sessionChanged || !noteEditorDirty) {
         noteText.value = noteSession.draft ?? noteSession.note ?? "";
         noteText.dataset.sessionId = noteSession.id;
         noteLoadedRevision = noteSession.revision;
         noteEditorDirty = false;
+        noteSyncConflict = false;
         setNoteMessage(
           noteSession.dirty
-            ? "Unsaved draft pulled from Kindle"
+            ? "Unsaved draft pulled from KOReader"
             : noteSession.has_saved_note
-              ? "Saved note pulled from Kindle"
+              ? "Saved note pulled from KOReader"
               : "Ready for a new note"
         );
       }
@@ -1486,31 +1511,38 @@
       noteView.hidden = true;
     }
 
+    function scheduleNoteAutoSync() {
+      window.clearTimeout(noteSyncTimer);
+      noteSyncTimer = window.setTimeout(() => {
+        syncNoteDraft();
+      }, NOTE_SYNC_DEBOUNCE_MS);
+    }
+
     async function pullNote() {
       if (noteEditorDirty) {
         const replace = window.confirm(
-          "Replace the text in the editor with the current Kindle note?"
+          "Replace the text in the editor with the current KOReader note?"
         );
         if (!replace) {
           return;
         }
       }
 
-      setNoteMessage("Pulling from Kindle…");
+      setNoteMessage("Pulling from KOReader…");
       const session = await loadNoteSession(true);
       if (!session || !session.active) {
         setNoteMessage("No note is selected on the reader", true);
       }
     }
 
-    async function pushNote(silent = false) {
+    async function pushNote(silent = false, generation = noteInputGeneration) {
       if (!noteSession || noteLoadedRevision === null) {
-        setNoteMessage("Pull a selected note from Kindle first", true);
+        setNoteMessage("Pull a selected note from KOReader first", true);
         return null;
       }
 
       if (!silent) {
-        setNoteMessage("Pushing draft to Kindle…");
+        setNoteMessage("Pushing draft to KOReader…");
       }
 
       try {
@@ -1522,9 +1554,18 @@
           }
         );
 
-        renderNoteSession(payload.session, true);
-        setNoteMessage("Draft sent to Kindle. Save it on either device.");
-        setStatus("Kindle draft updated", true);
+        const inputChanged = generation !== noteInputGeneration;
+        noteSession = payload.session;
+        noteLoadedRevision = payload.session.revision;
+        noteSyncConflict = false;
+
+        if (inputChanged) {
+          setNoteMessage("Draft synced; continuing to sync your changes.");
+        } else {
+          renderNoteSession(payload.session, true);
+          setNoteMessage("Draft synced to KOReader. Save it on either device.");
+        }
+        setStatus("KOReader draft updated", true);
 
         if (navigator.vibrate && !silent) {
           navigator.vibrate(20);
@@ -1538,29 +1579,66 @@
           if (error.payload.session) {
             noteSession = error.payload.session;
           }
+          noteSyncConflict = true;
           setNoteMessage(
-            "The Kindle draft changed. Pull the latest version before pushing.",
+            "The KOReader draft changed. Pull the latest version before pushing.",
             true
           );
         } else if (code === "NOTE_TOO_LARGE") {
           setNoteMessage(error.message || "The note is too large", true);
         } else {
-          setNoteMessage(error.message || "Could not update the Kindle draft", true);
+          setNoteMessage(error.message || "Could not update the KOReader draft", true);
         }
 
         return null;
       }
     }
 
+    function syncNoteDraft() {
+      if (noteSyncRunning) {
+        return noteSyncPromise || Promise.resolve(null);
+      }
+
+      if (
+        noteSyncConflict
+        || !noteEditorDirty
+        || !noteSession
+        || noteLoadedRevision === null
+      ) {
+        return Promise.resolve(null);
+      }
+
+      noteSyncRunning = true;
+      const generation = noteInputGeneration;
+      noteSyncPromise = (async () => {
+        try {
+          return await pushNote(true, generation);
+        } finally {
+          noteSyncRunning = false;
+          noteSyncPromise = null;
+          if (generation !== noteInputGeneration && noteEditorDirty) {
+            scheduleNoteAutoSync();
+          }
+        }
+      })();
+
+      return noteSyncPromise;
+    }
+
     async function saveNote() {
       if (!noteSession || noteLoadedRevision === null) {
-        setNoteMessage("Pull a selected note from Kindle first", true);
+        setNoteMessage("Pull a selected note from KOReader first", true);
         return;
       }
 
       if (noteEditorDirty) {
-        const pushed = await pushNote(true);
+        const pushed = await syncNoteDraft();
         if (!pushed) {
+          return;
+        }
+        if (noteEditorDirty) {
+          setNoteMessage("New changes are still syncing to KOReader…");
+          scheduleNoteAutoSync();
           return;
         }
       }
@@ -1576,7 +1654,7 @@
         );
 
         renderNoteSession(payload.session, true);
-        setStatus("Note saved on Kindle", true);
+        setStatus("Note saved in KOReader", true);
 
         if (navigator.vibrate) {
           navigator.vibrate([20, 30, 20]);
@@ -1589,7 +1667,7 @@
             noteSession = error.payload.session;
           }
           setNoteMessage(
-            "The Kindle draft changed. Pull it again before saving.",
+            "The KOReader draft changed. Pull it again before saving.",
             true
           );
         } else {
@@ -1603,7 +1681,7 @@
 
       try {
         await postJSON("/api/v1/footnote/open");
-        setStatus("Footnote opened on Kindle", true);
+        setStatus("Footnote opened in KOReader", true);
       } catch (error) {
         const code = error.payload && error.payload.error;
 
@@ -2588,7 +2666,9 @@
 
     noteText.addEventListener("input", () => {
       noteEditorDirty = true;
-      setNoteMessage("Not pushed to Kindle yet");
+      noteInputGeneration += 1;
+      setNoteMessage("Syncing to KOReader…");
+      scheduleNoteAutoSync();
     });
 
     document.addEventListener("click", (event) => {

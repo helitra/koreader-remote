@@ -83,8 +83,8 @@ The QR code opens a local address such as `http://192.168.1.42:8081/`.
 ### Work with notes
 
 - Create a selected-text note from the phone
-- Pull the open Kindle draft to the phone, push changes back, then save from
-  either device
+- Pull the open KOReader draft to the phone, or let changes sync automatically;
+  save the note from either device
 - Edit a highlight note, remove its text while retaining the highlight, or
   delete the complete annotation
 
