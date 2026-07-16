@@ -70,6 +70,7 @@ local HTTP_STATUS = {
 
 local Remote = WidgetContainer:extend{
     name = "koreaderremote",
+    repository = "helitra/koreader-remote",
     is_doc_only = false,
 }
 

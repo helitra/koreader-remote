@@ -615,11 +615,8 @@ function Updater:compareCandidate(candidate)
     end
 
     if self.installed_channel ~= candidate.channel then
-        -- Never switch from Stable to an older Beta build.
-        if comparison < 0 then
-            return 1
-        end
-        return -1
+        -- Stable can opt into a newer or same-version Beta build.
+        return comparison <= 0 and -1 or 1
     end
 
     if comparison ~= 0 then
