@@ -1520,8 +1520,12 @@
       }
 
       notePollTimer = window.setTimeout(async () => {
-        await loadNoteSession(false);
-        scheduleNotePoll();
+        const session = await loadNoteSession(false);
+        // Stop polling after a failed request; the connection loop will wake
+        // the note view again once the reader is reachable.
+        if (session) {
+          scheduleNotePoll();
+        }
       }, NOTE_POLL_MS);
     }
 
@@ -2443,6 +2447,10 @@
         }
 
         await loadDeviceState();
+
+        if (document.body.classList.contains("note-open")) {
+          scheduleNotePoll();
+        }
 
         if (info.document_open === false) {
           setStatus("Open a book on your reader", true);

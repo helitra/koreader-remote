@@ -50,6 +50,7 @@ local STATE_ERROR = "error"
 -- are only a low-frequency fallback for devices that miss those events.
 local RETRY_DELAYS = { 2, 5, 10, 20, 40, 80, 160, 300 }
 local RECOVERY_RETRY_SECONDS = 300
+local MANUAL_RECOVERY_MAX_SLEEP_SECONDS = 300
 
 local HTTP_STATUS = {
     [200] = "OK",
@@ -1047,8 +1048,10 @@ function Remote:beginResumeRecovery()
     runtime.sleep_started_at = nil
     runtime.sleeping = false
 
+    local manual_recovery_allowed = runtime.manual_session
+        and slept_for <= MANUAL_RECOVERY_MAX_SLEEP_SECONDS
     local should_restart = (runtime.autostart and not runtime.user_stopped)
-        or runtime.manual_session
+        or manual_recovery_allowed
 
     if not should_restart then
         runtime.request_origin = nil
