@@ -1200,6 +1200,7 @@
     const HOLD_DELAY_MS = 500;
     const SEND_DELAY_MS = 170;
     const NOTE_POLL_MS = 1800;
+    const NOTE_SYNC_RETRY_DELAYS_MS = [2000, 5000, 10000, 20000, 40000];
     const CONNECTION_CHECK_MS = 15000;
     const RECONNECT_DELAYS_MS = [3000, 10000, 30000, 120000, 300000];
     const NOTE_SYNC_DEBOUNCE_MS = 700;
@@ -1294,7 +1295,10 @@
     let noteSyncTimer = null;
     let noteSyncRunning = false;
     let noteSyncPromise = null;
+    let noteSyncRetryTimer = null;
+    let noteSyncRetryAttempt = 0;
     let noteInputGeneration = 0;
+    let noteRequestGeneration = 0;
     let noteSyncConflict = false;
     let bookmarkBook = null;
     let bookmarkFilter = "all";
@@ -1360,6 +1364,7 @@
           : "HTTP " + response.status;
         const requestError = new Error(message);
         requestError.payload = payload;
+        requestError.status = response.status;
         throw requestError;
       }
 
@@ -1494,11 +1499,18 @@
     }
 
     async function loadNoteSession(replaceEditor = false) {
+      const requestGeneration = ++noteRequestGeneration;
       try {
         const payload = await getJSON("/api/v1/note-session");
+        if (requestGeneration !== noteRequestGeneration) {
+          return noteSession;
+        }
         renderNoteSession(payload.session, replaceEditor);
         return payload.session;
       } catch (error) {
+        if (requestGeneration !== noteRequestGeneration) {
+          return noteSession;
+        }
         console.debug("Could not load remote note session:", error);
         if (document.body.classList.contains("note-open")) {
           setNoteMessage("Could not reach the reader", true);
@@ -1545,9 +1557,35 @@
 
     function scheduleNoteAutoSync() {
       window.clearTimeout(noteSyncTimer);
+      window.clearTimeout(noteSyncRetryTimer);
+      noteSyncRetryTimer = null;
+      noteSyncRetryAttempt = 0;
       noteSyncTimer = window.setTimeout(() => {
         syncNoteDraft();
       }, NOTE_SYNC_DEBOUNCE_MS);
+    }
+
+    function scheduleNoteSyncRetry() {
+      window.clearTimeout(noteSyncRetryTimer);
+      noteSyncRetryTimer = null;
+
+      if (
+        document.hidden
+        || !document.body.classList.contains("note-open")
+        || !noteEditorDirty
+        || noteSyncConflict
+      ) {
+        return;
+      }
+
+      const delay = NOTE_SYNC_RETRY_DELAYS_MS[
+        Math.min(noteSyncRetryAttempt, NOTE_SYNC_RETRY_DELAYS_MS.length - 1)
+      ];
+      noteSyncRetryAttempt += 1;
+      noteSyncRetryTimer = window.setTimeout(() => {
+        noteSyncRetryTimer = null;
+        syncNoteDraft();
+      }, delay);
     }
 
     async function pullNote() {
@@ -1578,6 +1616,7 @@
       }
 
       try {
+        const requestGeneration = ++noteRequestGeneration;
         const payload = await postJSON(
           "/api/v1/note-session/push",
           {
@@ -1586,10 +1625,17 @@
           }
         );
 
+        if (requestGeneration !== noteRequestGeneration) {
+          return noteSession;
+        }
+
         const inputChanged = generation !== noteInputGeneration;
         noteSession = payload.session;
         noteLoadedRevision = payload.session.revision;
         noteSyncConflict = false;
+        noteSyncRetryAttempt = 0;
+        window.clearTimeout(noteSyncRetryTimer);
+        noteSyncRetryTimer = null;
 
         if (inputChanged) {
           setNoteMessage("Draft synced; continuing to sync your changes.");
@@ -1650,6 +1696,8 @@
           noteSyncPromise = null;
           if (generation !== noteInputGeneration && noteEditorDirty) {
             scheduleNoteAutoSync();
+          } else if (noteEditorDirty && !noteSyncConflict) {
+            scheduleNoteSyncRetry();
           }
         }
       })();
@@ -1678,12 +1726,17 @@
       setNoteMessage("Saving note…");
 
       try {
+        const requestGeneration = ++noteRequestGeneration;
         const payload = await postJSON(
           "/api/v1/note-session/save",
           {
             "X-KOReader-Note-Revision": String(noteLoadedRevision),
           }
         );
+
+        if (requestGeneration !== noteRequestGeneration) {
+          return;
+        }
 
         renderNoteSession(payload.session, true);
         setStatus("Note saved in KOReader", true);

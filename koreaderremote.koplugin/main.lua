@@ -1300,7 +1300,7 @@ function Remote:turnPage(delta)
     return true
 end
 
-function Remote:onRequest(data, request_id)
+function Remote:onRequestUnsafe(data, request_id)
     local method, raw_uri = data:match(
         "^(%u+)%s+([^%s]+)%s+HTTP/%d%.%d"
     )
@@ -1939,6 +1939,27 @@ function Remote:onRequest(data, request_id)
         404,
         "text/plain; charset=utf-8",
         "Not found"
+    )
+end
+
+-- Keep unexpected KOReader/API failures inside the request boundary. A bad
+-- document or device state must produce one response, not escape the server
+-- callback and potentially break later requests.
+function Remote:onRequest(data, request_id)
+    local ok, result = xpcall(function()
+        return self:onRequestUnsafe(data, request_id)
+    end, debug.traceback)
+
+    if ok then
+        return result
+    end
+
+    logger.err("KOReaderRemote: unhandled HTTP request error:", result)
+    return self:sendControlError(
+        request_id,
+        500,
+        "INTERNAL_ERROR",
+        "The reader could not handle this request."
     )
 end
 
