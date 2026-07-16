@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="KOReader%20Logo.png" alt="KOReader Remote logo" width="220">
+<img src="Koreader%20Remote%20Logo.png" alt="KOReader Remote logo" width="420">
 
 # KOReader Remote
 
