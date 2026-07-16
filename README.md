@@ -144,10 +144,10 @@ then keeps the previous version as a backup until the new one has started
 successfully. Dev builds show their release number, build ID, and commit SHA.
 
 Stable releases are published from `main`. Commits on `dev` publish one current
-wireless test build to the separate `dev-updates` branch; they do not create
-GitHub Releases. Dev builds are intended for testing and are replaced by the
-next Dev commit. Switch back to Stable when you want the regular release stream
-again.
+wireless test build to the `dev/dev-updates/` path; they do not create GitHub
+Releases or a second branch. Dev builds are intended for testing and are
+replaced by the next Dev commit. Switch back to Stable when you want the
+regular release stream again.
 
 ## 🔐 Security
 

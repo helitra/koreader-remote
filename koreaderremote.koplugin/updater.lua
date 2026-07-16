@@ -33,7 +33,7 @@ Updater.__index = Updater
 local GITHUB_STABLE_API_URL =
     "https://api.github.com/repos/helitra/koreader-remote/releases/latest"
 local DEV_MANIFEST_URL =
-    "https://raw.githubusercontent.com/helitra/koreader-remote/dev-updates/manifest.json"
+    "https://raw.githubusercontent.com/helitra/koreader-remote/dev/dev-updates/manifest.json"
 local PLUGIN_FOLDER_NAME = "koreaderremote.koplugin"
 local UPDATE_WORK_DIR =
     DataStorage:getDataDir() .. "/koreaderremote-update"
