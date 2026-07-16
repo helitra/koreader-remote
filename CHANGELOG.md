@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.3
+
+### Fixed
+
+- Reduced unnecessary note polling during connection failures and paused
+  retries when the web interface is hidden.
+- Limited manual session recovery after standby to short sleeps while keeping
+  autostart recovery available.
+- Added global HTTP error handling and safer automatic note-sync retries with
+  stale-response protection.
+
 ## v0.9.2
 
 ### Added
