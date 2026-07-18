@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="KOReader%20Logo.png" alt="KOReader Remote logo" width="220">
+
 # KOReader Remote
 
 **Turn pages and control KOReader from your phone browser.**
@@ -32,71 +34,79 @@ The whole project was mostly vibe-coded -- okay, basically all of it. It
 started as a tiny page-turn experiment and slowly became a real KOReader
 plugin. =)
 
-## 🚀 Start here
+## ✅ Requirements
 
-### What you need
-
-- KOReader and a device that permits external KOReader plugins
-- Your reader and phone on the same local network
-- A network that allows devices to communicate directly
-- A jailbroken device where the platform requires one
+- KOReader installed
+- A device that permits KOReader plugins
+- Reader and phone on the same local network
+- Direct device-to-device communication on that network
+- Jailbreak access where required by the platform
 
 Guest Wi-Fi networks often block local device-to-device traffic.
 
-### Install and pair
+## 🚀 Start here
 
-1. Download and extract `koreaderremote-v*.zip` from the
-   [latest release](https://github.com/helitra/koreader-remote/releases/latest).
-2. Copy `koreaderremote.koplugin` into KOReader's plugin directory:
+1. Download the latest `koreaderremote-v*.zip` from
+   [Releases](https://github.com/helitra/koreader-remote/releases/latest).
+2. Extract the ZIP and copy the complete `koreaderremote.koplugin` folder to:
 
    ```text
    Kindle: koreader/plugins/
    Kobo:   .adds/koreader/plugins/
    ```
 
-3. Restart KOReader, open a book, then select:
-
-   ```text
-   Tools -> KOReader Remote -> Start remote server
-   ```
-
-4. Select **Show QR code** and scan the code with your phone.
+3. Restart KOReader and open a book.
+4. Select **Tools -> KOReader Remote -> Start remote server**.
+5. Select **Show QR code** and scan it with your phone.
 
 The QR code opens a local address such as `http://192.168.1.42:8081/`.
 
-## ✨ What it does
+## ✨ Features
 
-### Read comfortably
+- Turn pages with large touch controls.
+- Use keyboard arrow keys when available.
+- Browse, search, sort, and open bookmarks, highlights, and notes.
+- Open detected EPUB footnotes.
+- Edit and sync the active KOReader note draft.
+- Control supported frontlight, brightness, warmth, and night mode settings.
+- Trigger a full-screen refresh on supported E-Ink devices.
+- Use OLED mode for a pure-black interface.
+- Recover the connection after standby and Wi-Fi reconnects.
+- Start the server automatically with KOReader.
+- No phone app, account, cloud service, or background GitHub polling.
 
-- Large thumb-friendly previous/next page controls and keyboard arrow keys
-- Open the next detected EPUB footnote from the current page
-- Browse, search, sort, and jump to bookmarks, highlights, and notes
-- Return to the reading position after inspecting annotations
-- Optional pure-black OLED mode
+## 🛠️ Troubleshooting
 
-### Control supported devices
+### “Remote UI missing”
 
-- Front light, brightness, warmth, night mode, and full-screen refresh
-- Presets plus precise one-percent adjustment with gentle hold-to-repeat
-- Controls appear only when KOReader reports support for the device
+The plugin cannot find `web/index.html`. Make sure the complete plugin folder
+was copied and that the file exists at:
 
-### Work with notes
+```text
+Kindle: koreader/plugins/koreaderremote.koplugin/web/index.html
+Kobo:   .adds/koreader/plugins/koreaderremote.koplugin/web/index.html
+```
 
-- Create a selected-text note from the phone
-- Pull the open KOReader draft to the phone, or let changes sync automatically;
-  save the note from either device
-- Edit a highlight note, remove its text while retaining the highlight, or
-  delete the complete annotation
+Download the ZIP again if the file is missing. Also check that the folder is
+not nested twice, for example:
+`koreaderremote.koplugin/koreaderremote.koplugin/`.
 
-Only one remote-note session is active at a time. It expires after 30 minutes
-and prevents either device from silently overwriting a newer draft.
+### The phone cannot connect
 
-### Stay connected
+- Confirm that the reader and phone are on the same Wi-Fi network.
+- Avoid guest networks that isolate connected devices.
+- Restart the remote server after changing Wi-Fi networks.
+- Show and scan the QR code again if the reader received a new IP address.
 
-- QR-code sharing and configurable server port
-- Optional automatic start with KOReader
-- Wi-Fi recovery after standby and browser reconnection when the reader returns
-- The server remains available while changing books or visiting the file manager
+### The server does not return after standby
+
+- Wait a few seconds for Wi-Fi to reconnect after waking the reader.
+- Manually started sessions are restored after short sleep periods.
+- Enable **Auto start remote server** to restore the server after longer sleep.
+- The remote cannot wake a sleeping reader.
+
+If the problem continues, include the device model, KOReader version, plugin
+version, steps to reproduce, and a screenshot in a GitHub issue.
 
 ## 📖 Everyday use
 
