@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="Koreader%20Remote%20Logo.png" alt="KOReader Remote logo" width="420">
-
 # KOReader Remote
 
 **Turn pages and control KOReader from your phone browser.**
