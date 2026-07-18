@@ -11,7 +11,7 @@
 
 ⭐ **If this plugin is useful to you, starring the repository helps a lot.** ⭐
 
-[https://github.com/user-attachments/assets/f81e5089-8f5f-4a0a-93cc-433873eff57c](https://github.com/user-attachments/assets/e66a59b4-bbb9-425a-935a-61ee9de270e1)
+https://github.com/user-attachments/assets/5f46e15f-ffde-4b26-80c3-23264d424e81
 
 </div>
 
