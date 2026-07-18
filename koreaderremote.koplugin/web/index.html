@@ -368,6 +368,70 @@
       vertical-align: -0.08rem;
     }
 
+    #session-log-section {
+      padding-bottom: 0;
+    }
+
+    #session-log-heading {
+      padding-right: 0.55rem;
+    }
+
+    #session-log-refresh {
+      width: 2.35rem;
+      height: 2.35rem;
+      font-size: 1rem;
+    }
+
+    #session-log-export {
+      width: auto;
+      min-width: 2.35rem;
+      padding: 0 0.62rem;
+      border-radius: 0.55rem;
+      font-size: 0.78rem;
+    }
+
+    #session-log-heading > span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.42rem;
+    }
+
+    #session-log-summary {
+      padding: 0 0.82rem 0.62rem;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #session-log-list {
+      max-height: 13rem;
+      margin: 0;
+      padding: 0 0.82rem 0.82rem 2.25rem;
+      overflow-y: auto;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    #session-log-list li {
+      margin-bottom: 0.42rem;
+      padding-left: 0.15rem;
+    }
+
+    #session-log-list li:last-child {
+      margin-bottom: 0;
+    }
+
+    #session-log-list time {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #session-log-list .session-log-type {
+      color: var(--accent);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
     #remote {
       display: grid;
       min-height: 9rem;
@@ -1078,6 +1142,20 @@
           <div id="full-refresh-row" hidden>
             <button id="full-refresh" type="button">Full screen refresh</button>
           </div>
+
+          <section class="setting-section" id="session-log-section">
+            <div class="setting-heading" id="session-log-heading">
+              <strong>Session log</strong>
+              <span>
+                <button class="icon-button" id="session-log-refresh" type="button"
+                        aria-label="Refresh session log" title="Refresh session log">↻</button>
+                <button class="icon-button" id="session-log-export" type="button"
+                        aria-label="Export diagnostics" title="Export diagnostics">Export</button>
+              </span>
+            </div>
+            <div id="session-log-summary">No session events</div>
+            <ol id="session-log-list" reversed></ol>
+          </section>
         </div>
       </div>
     </details>
@@ -1248,6 +1326,10 @@
     const warmthRow = document.getElementById("warmth-row");
     const nightModeRow = document.getElementById("night-mode-row");
     const fullRefreshRow = document.getElementById("full-refresh-row");
+    const sessionLogRefresh = document.getElementById("session-log-refresh");
+    const sessionLogExport = document.getElementById("session-log-export");
+    const sessionLogSummary = document.getElementById("session-log-summary");
+    const sessionLogList = document.getElementById("session-log-list");
     const frontlightToggle = document.getElementById("frontlight-toggle");
     const nightModeToggle = document.getElementById("night-mode-toggle");
 
@@ -2414,15 +2496,8 @@
       warmthRow.hidden = !capabilities.warmth;
       nightModeRow.hidden = !capabilities.night_mode;
       fullRefreshRow.hidden = !capabilities.full_refresh;
-      const hasControls = Boolean(
-        capabilities.frontlight
-        || capabilities.brightness
-        || capabilities.warmth
-        || capabilities.night_mode
-        || capabilities.full_refresh
-      );
-
-      deviceControlsElement.hidden = !hasControls;
+      // Keep diagnostics available even on devices without hardware controls.
+      deviceControlsElement.hidden = false;
     }
 
     function controlIsBusy(name) {
@@ -2477,6 +2552,79 @@
       applyDeviceState(payload.state);
     }
 
+    function formatSessionTime(timestamp) {
+      if (!timestamp) {
+        return "--:--:--";
+      }
+
+      return new Date(Number(timestamp) * 1000).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
+
+    function renderSessionLog(payload) {
+      const stats = payload.stats || {};
+      const events = Array.isArray(payload.events) ? payload.events : [];
+      const lastAction = payload.last_action && payload.last_action.name;
+      const lastErrorCode = payload.last_error_code;
+
+      sessionLogSummary.textContent = [
+        (stats.actions || 0) + " actions",
+        (stats.reconnects || 0) + " reconnects",
+        (stats.errors || 0) + " errors",
+        (stats.warnings || 0) + " warnings",
+        lastAction ? "last: " + lastAction : "",
+        lastErrorCode ? "error: " + lastErrorCode : "",
+      ].filter(Boolean).join(" · ");
+
+      sessionLogList.replaceChildren();
+      events.slice().reverse().forEach((event) => {
+        const item = document.createElement("li");
+        const time = document.createElement("time");
+        const type = document.createElement("span");
+        const message = document.createElement("span");
+        const code = event.code ? " [" + event.code + "]" : "";
+
+        time.textContent = formatSessionTime(event.timestamp) + " ";
+        type.className = "session-log-type"
+          + (event.level === "error" ? " error" : "");
+        type.textContent = String(event.level || event.type || "event") + " ";
+        message.textContent = String(event.message || "") + code;
+        item.append(time, type, message);
+        sessionLogList.append(item);
+      });
+    }
+
+    async function loadSessionLog() {
+      try {
+        const payload = await getJSON("/api/v1/session-log");
+        renderSessionLog(payload);
+      } catch (error) {
+        sessionLogSummary.textContent = "Session log unavailable";
+      }
+    }
+
+    async function exportDiagnostics() {
+      try {
+        const payload = await getJSON("/api/v1/diagnostics");
+        const blob = new Blob(
+          [JSON.stringify(payload.diagnostics, null, 2)],
+          { type: "application/json" }
+        );
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "koreader-remote-diagnostics.json";
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+        setStatus("Diagnostics exported", true);
+      } catch (error) {
+        setStatus("Diagnostics export failed", false);
+      }
+    }
+
     async function checkConnection() {
       if (document.hidden) {
         return;
@@ -2500,6 +2648,7 @@
         }
 
         await loadDeviceState();
+        await loadSessionLog();
 
         if (document.body.classList.contains("note-open")) {
           scheduleNotePoll();
@@ -2767,6 +2916,8 @@
     notePull.addEventListener("click", pullNote);
     notePush.addEventListener("click", () => pushNote(false));
     noteSave.addEventListener("click", saveNote);
+    sessionLogRefresh.addEventListener("click", loadSessionLog);
+    sessionLogExport.addEventListener("click", exportDiagnostics);
     oledButton.addEventListener("click", () => {
       applyOledMode(
         document.documentElement.dataset.oled !== "true"

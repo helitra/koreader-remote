@@ -52,8 +52,30 @@ local RETRY_DELAYS = { 2, 5, 10, 20, 40, 80, 160, 300 }
 local RECOVERY_RETRY_SECONDS = 300
 local MANUAL_RECOVERY_MAX_SLEEP_SECONDS = 300
 local LOCAL_IP_CACHE_SECONDS = 15
+local SESSION_LOG_LIMIT = 100
+local CRITICAL_ERROR_LIMIT = 20
+local CRITICAL_ERRORS_SETTINGS_KEY = "koreaderremote_critical_errors"
+local REQUEST_LOG_LIMIT = 50
 local FIREWALL_INPUT_CHAIN = "KOREADERREMOTE_IN"
 local FIREWALL_OUTPUT_CHAIN = "KOREADERREMOTE_OUT"
+
+local ERROR_CODE = {
+    NET_WIFI_CONNECTING = "NET_WIFI_CONNECTING",
+    NET_WIFI_DISCONNECTED = "NET_WIFI_DISCONNECTED",
+    NET_IP_UNAVAILABLE = "NET_IP_UNAVAILABLE",
+    NET_STATE_QUERY_FAILED = "NET_STATE_QUERY_FAILED",
+    NET_RESUME_WAITING = "NET_RESUME_WAITING",
+    NET_RECONNECTED = "NET_RECONNECTED",
+    LIFECYCLE_STANDBY = "LIFECYCLE_STANDBY",
+    LIFECYCLE_RESUME = "LIFECYCLE_RESUME",
+    SERVER_START_FAILED = "SERVER_START_FAILED",
+    SERVER_PORT_IN_USE = "SERVER_PORT_IN_USE",
+    FIREWALL_CHAIN_FAILED = "FIREWALL_CHAIN_FAILED",
+    FIREWALL_RULE_FAILED = "FIREWALL_RULE_FAILED",
+    FIREWALL_JUMP_FAILED = "FIREWALL_JUMP_FAILED",
+    HTTP_INVALID_REQUEST = "HTTP_INVALID_REQUEST",
+    INTERNAL_UNHANDLED_ERROR = "INTERNAL_UNHANDLED_ERROR",
+}
 
 local HTTP_STATUS = {
     [200] = "OK",
@@ -74,6 +96,13 @@ local Remote = WidgetContainer:extend{
     repository = "helitra/koreader-remote",
     is_doc_only = false,
 }
+
+local function diagnosticClock()
+    if type(UIManager.getTime) == "function" then
+        return UIManager:getTime()
+    end
+    return os.clock()
+end
 
 -- PluginLoader evaluates third-party plugins with dofile() for each UI. Keep
 -- the server and session state in package.loaded so changing between ReaderUI
@@ -105,9 +134,98 @@ if type(runtime) ~= "table" then
         connection_revision = 0,
         sleep_started_at = nil,
         sleeping = false,
+        resume_network_grace_until = nil,
+        session_log = {},
+        session_stats = {
+            connections = 0,
+            reconnects = 0,
+            actions = 0,
+            errors = 0,
+            retries = 0,
+            warnings = 0,
+            requests = 0,
+            error_codes = {},
+        },
+        last_action = nil,
+        last_error_code = nil,
+        critical_errors = G_reader_settings:readSetting(
+            CRITICAL_ERRORS_SETTINGS_KEY
+        ) or {},
+        request_contexts = {},
+        request_log = {},
+        request_stats = {
+            total = 0,
+            by_endpoint = {},
+        },
+        last_request = nil,
         document_open = false,
     }
     package.loaded[RUNTIME_KEY] = runtime
+end
+
+if type(runtime.session_log) ~= "table" then
+    runtime.session_log = {}
+end
+if type(runtime.session_stats) ~= "table" then
+    runtime.session_stats = {
+        connections = 0,
+        reconnects = 0,
+        actions = 0,
+        errors = 0,
+        retries = 0,
+        error_codes = {},
+    }
+end
+runtime.session_stats = runtime.session_stats or {
+    connections = 0,
+    reconnects = 0,
+    actions = 0,
+    errors = 0,
+    retries = 0,
+}
+runtime.session_stats.connections = runtime.session_stats.connections or 0
+runtime.session_stats.reconnects = runtime.session_stats.reconnects or 0
+runtime.session_stats.actions = runtime.session_stats.actions or 0
+runtime.session_stats.errors = runtime.session_stats.errors or 0
+runtime.session_stats.retries = runtime.session_stats.retries or 0
+runtime.session_stats.warnings = runtime.session_stats.warnings or 0
+runtime.session_stats.requests = runtime.session_stats.requests or 0
+if type(runtime.session_stats.error_codes) ~= "table" then
+    runtime.session_stats.error_codes = {}
+end
+if type(runtime.critical_errors) ~= "table" then
+    runtime.critical_errors = G_reader_settings:readSetting(
+        CRITICAL_ERRORS_SETTINGS_KEY
+    ) or {}
+end
+if type(runtime.request_contexts) ~= "table" then
+    runtime.request_contexts = {}
+end
+if type(runtime.request_log) ~= "table" then
+    runtime.request_log = {}
+end
+if type(runtime.request_stats) ~= "table" then
+    runtime.request_stats = {
+        total = 0,
+        by_endpoint = {},
+    }
+end
+runtime.request_stats = runtime.request_stats or {
+    total = 0,
+    by_endpoint = {},
+}
+runtime.request_stats.total = runtime.request_stats.total or 0
+if type(runtime.request_stats.by_endpoint) ~= "table" then
+    runtime.request_stats.by_endpoint = {}
+end
+if type(runtime.last_error_code) ~= "string" then
+    runtime.last_error_code = nil
+end
+if type(runtime.last_request) ~= "table" then
+    runtime.last_request = nil
+end
+while #runtime.critical_errors > CRITICAL_ERROR_LIMIT do
+    table.remove(runtime.critical_errors, 1)
 end
 
 local function isUsableIPv4(address)
@@ -259,6 +377,165 @@ local function parseBoolean(value)
     end
 
     return nil
+end
+
+function Remote:recordSessionEvent(event_type, message, details)
+    details = details or {}
+    local timestamp = os.time()
+    local level = details.level
+    if not level then
+        level = event_type == "error" and "error" or "info"
+    end
+
+    local category = details.category
+    if not category then
+        category = event_type == "action" and "action"
+            or event_type == "error" and "internal"
+            or event_type == "retry" and "network"
+            or "network"
+    end
+
+    local code = details.code
+    if not code and level == "error" then
+        code = "UNKNOWN_ERROR"
+    end
+
+    local event = {
+        timestamp = timestamp,
+        type = tostring(event_type),
+        level = level,
+        category = category,
+        code = code,
+        message = tostring(message or ""),
+        state = runtime.state,
+        network_ready = runtime.network_ready == true,
+        retry_index = runtime.retry_index,
+    }
+
+    for key, value in pairs(details) do
+        local is_metadata = key ~= "level"
+            and key ~= "category"
+            and key ~= "code"
+        local value_type = type(value)
+        if is_metadata and (
+            value_type == "string"
+            or value_type == "number"
+            or value_type == "boolean"
+        ) then
+            event[key] = value
+        end
+    end
+
+    table.insert(runtime.session_log, event)
+    while #runtime.session_log > SESSION_LOG_LIMIT do
+        table.remove(runtime.session_log, 1)
+    end
+
+    local stat_keys = {
+        connection = "connections",
+        reconnect = "reconnects",
+        action = "actions",
+        error = "errors",
+        retry = "retries",
+    }
+    local stat_key = stat_keys[event_type]
+    local stats = runtime.session_stats
+    if stat_key then
+        stats[stat_key] = stats[stat_key] + 1
+    end
+    if level == "warning" then
+        stats.warnings = stats.warnings + 1
+    end
+
+    if code then
+        runtime.last_error_code = code
+    end
+
+    if level == "error" then
+        runtime.session_stats.error_codes[code] =
+            (runtime.session_stats.error_codes[code] or 0) + 1
+        table.insert(runtime.critical_errors, event)
+        while #runtime.critical_errors > CRITICAL_ERROR_LIMIT do
+            table.remove(runtime.critical_errors, 1)
+        end
+        G_reader_settings:saveSetting(
+            CRITICAL_ERRORS_SETTINGS_KEY,
+            runtime.critical_errors
+        )
+    end
+
+    if event_type == "action" then
+        runtime.last_action = {
+            timestamp = timestamp,
+            name = event.action or event.message,
+        }
+    end
+end
+
+function Remote:recordDiagnosticError(code, message, category, details)
+    details = details or {}
+    details.code = code
+    details.category = category
+    details.level = "error"
+    self:recordSessionEvent("error", message, details)
+end
+
+function Remote:recordDiagnosticWarning(code, message, category, details)
+    details = details or {}
+    details.code = code
+    details.category = category
+    details.level = "warning"
+    self:recordSessionEvent("warning", message, details)
+end
+
+function Remote:beginRequest(request_id, method, endpoint)
+    if request_id == nil then
+        return
+    end
+
+    runtime.request_contexts[request_id] = {
+        method = method,
+        endpoint = endpoint,
+        started_at = diagnosticClock(),
+    }
+end
+
+function Remote:completeRequest(request_id, status)
+    local context = runtime.request_contexts[request_id]
+    if not context then
+        return
+    end
+
+    local duration_ms = math.floor(
+        (diagnosticClock() - context.started_at) * 1000 + 0.5
+    )
+    local request = {
+        timestamp = os.time(),
+        method = context.method,
+        endpoint = context.endpoint,
+        status = status,
+        duration_ms = duration_ms,
+    }
+
+    table.insert(runtime.request_log, request)
+    while #runtime.request_log > REQUEST_LOG_LIMIT do
+        table.remove(runtime.request_log, 1)
+    end
+
+    runtime.session_stats.requests = runtime.session_stats.requests + 1
+    runtime.request_stats.total = runtime.request_stats.total + 1
+    runtime.request_stats.by_endpoint[context.endpoint] =
+        runtime.request_stats.by_endpoint[context.endpoint] or {
+            count = 0,
+            last_status = nil,
+            last_duration_ms = nil,
+        }
+    local endpoint_stats = runtime.request_stats.by_endpoint[context.endpoint]
+    endpoint_stats.count = endpoint_stats.count + 1
+    endpoint_stats.last_status = status
+    endpoint_stats.last_duration_ms = duration_ms
+    runtime.last_request = request
+    runtime.request_contexts[request_id] = nil
 end
 
 function Remote:init()
@@ -428,7 +705,7 @@ end
 
 -- State and retry handling ---------------------------------------------------
 
-function Remote:setState(state, last_error)
+function Remote:setState(state, last_error, error_code, error_details)
     if runtime.state ~= state or runtime.last_error ~= last_error then
         logger.info(
             "KOReaderRemote: state",
@@ -441,6 +718,15 @@ function Remote:setState(state, last_error)
 
     runtime.state = state
     runtime.last_error = last_error
+    runtime.last_error_code = error_code
+
+    if last_error then
+        error_details = error_details or {}
+        error_details.state = state
+        error_details.code = error_code or "UNKNOWN_ERROR"
+        error_details.category = error_details.category or "lifecycle"
+        self:recordSessionEvent("error", tostring(last_error), error_details)
+    end
 end
 
 function Remote:getStateText()
@@ -497,6 +783,10 @@ function Remote:scheduleRetry()
         delay,
         "seconds"
     )
+    self:recordSessionEvent("retry", "network retry scheduled", {
+        attempt = runtime.retry_index,
+        delay = delay,
+    })
 
     UIManager:scheduleIn(delay, runtime.retry_action)
     return true
@@ -636,6 +926,9 @@ function Remote:detectLocalIP(force)
 end
 
 function Remote:isNetworkReady(force_ip_refresh)
+    local tolerate_stale_state = runtime.resume_network_grace_until
+        and os.time() <= runtime.resume_network_grace_until
+
     -- queryNetworkState is KOReader's platform abstraction. An explicit
     -- disconnected state must win over a cached or shell-detected address.
     local state_ok, connected = pcall(function()
@@ -643,16 +936,24 @@ function Remote:isNetworkReady(force_ip_refresh)
         return NetworkMgr:getConnectionState()
     end)
 
-    if state_ok and connected == false then
-        return false, nil
+    if state_ok and connected == false and not tolerate_stale_state then
+        return false, nil, ERROR_CODE.NET_WIFI_DISCONNECTED
     end
 
-    local ip = self:detectLocalIP(force_ip_refresh)
+    local ip = self:detectLocalIP(force_ip_refresh or tolerate_stale_state)
 
     -- If the KOReader query itself is unavailable, a valid local address is
-    -- still useful as a compatibility fallback. An explicit false remains
-    -- authoritative and was returned above.
-    return connected ~= false and ip ~= nil, ip
+    -- still useful as a compatibility fallback.
+    if not ip then
+        if not state_ok then
+            return false, nil, ERROR_CODE.NET_STATE_QUERY_FAILED
+        elseif tolerate_stale_state then
+            return false, nil, ERROR_CODE.NET_RESUME_WAITING
+        end
+        return false, nil, ERROR_CODE.NET_IP_UNAVAILABLE
+    end
+
+    return (connected ~= false or tolerate_stale_state), ip
 end
 
 function Remote:updateConnectionInfo(ip)
@@ -911,6 +1212,12 @@ function Remote:openFirewall(port)
     if not self:prepareFirewallChain(FIREWALL_INPUT_CHAIN)
         or not self:prepareFirewallChain(FIREWALL_OUTPUT_CHAIN) then
         logger.warn("KOReaderRemote: could not prepare Kindle firewall chains")
+        self:recordDiagnosticWarning(
+            ERROR_CODE.FIREWALL_CHAIN_FAILED,
+            "could not prepare Kindle firewall chains",
+            "firewall",
+            { port = port }
+        )
         self:deleteFirewallChain("INPUT", FIREWALL_INPUT_CHAIN)
         self:deleteFirewallChain("OUTPUT", FIREWALL_OUTPUT_CHAIN)
         return
@@ -930,6 +1237,12 @@ function Remote:openFirewall(port)
     if not commandSucceeded(input_rule)
         or not commandSucceeded(output_rule) then
         logger.warn("KOReaderRemote: could not add Kindle firewall rules")
+        self:recordDiagnosticWarning(
+            ERROR_CODE.FIREWALL_RULE_FAILED,
+            "could not add Kindle firewall rules",
+            "firewall",
+            { port = port }
+        )
         self:deleteFirewallChain("INPUT", FIREWALL_INPUT_CHAIN)
         self:deleteFirewallChain("OUTPUT", FIREWALL_OUTPUT_CHAIN)
         return
@@ -947,6 +1260,12 @@ function Remote:openFirewall(port)
     if not commandSucceeded(input_jump)
         or not commandSucceeded(output_jump) then
         logger.warn("KOReaderRemote: could not attach Kindle firewall chains")
+        self:recordDiagnosticWarning(
+            ERROR_CODE.FIREWALL_JUMP_FAILED,
+            "could not attach Kindle firewall chains",
+            "firewall",
+            { port = port }
+        )
         self:deleteFirewallChain("INPUT", FIREWALL_INPUT_CHAIN)
         self:deleteFirewallChain("OUTPUT", FIREWALL_OUTPUT_CHAIN)
         return
@@ -1007,7 +1326,13 @@ function Remote:startServer(silent, known_ip)
         self:closeFirewall()
         runtime.request_origin = nil
         runtime.manual_session = false
-        self:setState(STATE_ERROR, error_text)
+        local error_code = error_text:lower():match("address already in use")
+            and ERROR_CODE.SERVER_PORT_IN_USE
+            or ERROR_CODE.SERVER_START_FAILED
+        self:setState(STATE_ERROR, error_text, error_code, {
+            category = "server",
+            port = port,
+        })
 
         if not silent then
             UIManager:show(InfoMessage:new{
@@ -1028,6 +1353,10 @@ function Remote:startServer(silent, known_ip)
     self:cancelRetry()
     self:refreshConnectionInfo(known_ip)
     self:setState(STATE_RUNNING)
+    self:recordSessionEvent("connection", "server started", {
+        category = "server",
+        port = port,
+    })
 
     if not silent then
         self:showPairingDialog()
@@ -1038,6 +1367,7 @@ function Remote:startServer(silent, known_ip)
 end
 
 function Remote:stopServer()
+    local was_running = runtime.http_socket ~= nil
     if runtime.http_socket then
         logger.info("KOReaderRemote: stopping server")
         runtime.http_socket:stop()
@@ -1058,6 +1388,12 @@ function Remote:stopServer()
     -- the server is stopped or the network is unavailable.
     logger.dbg("KOReaderRemote: preserving last remote URL for comparison")
     logger.info("KOReaderRemote: server stopped")
+
+    if was_running then
+        self:recordSessionEvent("connection", "server stopped", {
+            category = "server",
+        })
+    end
 end
 
 function Remote:attemptRecovery(silent, reason)
@@ -1065,7 +1401,7 @@ function Remote:attemptRecovery(silent, reason)
         return false
     end
 
-    local ready, ip = self:isNetworkReady()
+    local ready, ip, network_code = self:isNetworkReady()
 
     if not ready then
         runtime.network_ready = false
@@ -1089,6 +1425,12 @@ function Remote:attemptRecovery(silent, reason)
         end
 
         logger.info("KOReaderRemote: network not ready during", reason or "start")
+        self:recordSessionEvent("warning", "network not ready", {
+            level = "warning",
+            category = "network",
+            code = network_code or ERROR_CODE.NET_IP_UNAVAILABLE,
+            reason = reason or "start",
+        })
         return false
     end
 
@@ -1269,6 +1611,10 @@ function Remote:onNetworkConnecting()
     end
 
     self:invalidateLocalIPCache()
+    self:recordSessionEvent("connection", "network connecting", {
+        code = ERROR_CODE.NET_WIFI_CONNECTING,
+        category = "network",
+    })
 
     if self:isRunning() or self:hasStartRequest() then
         runtime.network_ready = false
@@ -1286,6 +1632,7 @@ function Remote:onNetworkConnected()
     end
 
     self:invalidateLocalIPCache()
+    local was_ready = runtime.network_ready
     local ready, ip = self:isNetworkReady(true)
 
     if not ready then
@@ -1298,6 +1645,18 @@ function Remote:onNetworkConnected()
     runtime.network_ready = true
     self:cancelRetry()
 
+    if was_ready then
+        self:recordSessionEvent("connection", "network connected", {
+            ip = ip,
+        })
+    else
+        self:recordSessionEvent("reconnect", "network reconnected", {
+            ip = ip,
+            code = ERROR_CODE.NET_RECONNECTED,
+            category = "network",
+        })
+    end
+
     if self:isRunning() then
         self:refreshConnectionInfo(ip)
         self:setState(STATE_RUNNING)
@@ -1309,6 +1668,11 @@ end
 function Remote:onNetworkDisconnected()
     runtime.network_ready = false
     self:invalidateLocalIPCache()
+    self:recordDiagnosticWarning(
+        ERROR_CODE.NET_WIFI_DISCONNECTED,
+        "network disconnected",
+        "network"
+    )
 
     if runtime.sleeping then
         return
@@ -1322,18 +1686,34 @@ function Remote:onNetworkDisconnected()
 end
 
 function Remote:onEnterStandby()
+    self:recordSessionEvent("lifecycle", "entering standby", {
+        code = ERROR_CODE.LIFECYCLE_STANDBY,
+        category = "lifecycle",
+    })
     self:prepareForSleep()
 end
 
 function Remote:onSuspend()
+    self:recordSessionEvent("lifecycle", "suspended", {
+        code = ERROR_CODE.LIFECYCLE_STANDBY,
+        category = "lifecycle",
+    })
     self:prepareForSleep()
 end
 
 function Remote:onLeaveStandby()
+    self:recordSessionEvent("lifecycle", "leaving standby", {
+        code = ERROR_CODE.LIFECYCLE_RESUME,
+        category = "lifecycle",
+    })
     self:beginResumeRecovery()
 end
 
 function Remote:onResume()
+    self:recordSessionEvent("lifecycle", "resuming", {
+        code = ERROR_CODE.LIFECYCLE_RESUME,
+        category = "lifecycle",
+    })
     self:beginResumeRecovery()
 end
 
@@ -1361,6 +1741,7 @@ end
 function Remote:sendResponse(request_id, status, content_type, body, counts_as_input)
     status = status or 500
     body = body or ""
+    self:completeRequest(request_id, status)
 
     local headers = {
         string.format(
@@ -1391,6 +1772,14 @@ end
 
 
 function Remote:sendJSON(request_id, status, payload, counts_as_input)
+    if counts_as_input
+        and type(payload) == "table"
+        and payload.action then
+        self:recordSessionEvent("action", payload.action, {
+            action = payload.action,
+        })
+    end
+
     return self:sendResponse(
         request_id,
         status,
@@ -1401,11 +1790,55 @@ function Remote:sendJSON(request_id, status, payload, counts_as_input)
 end
 
 function Remote:sendControlError(request_id, status, code, message)
+    local event_type = status >= 500 and "error" or "warning"
+    self:recordSessionEvent(event_type, message or code, {
+        level = event_type == "error" and "error" or "warning",
+        category = "http",
+        code = code,
+        status = status,
+    })
     return self:sendJSON(request_id, status, {
         ok = false,
         error = code,
         message = message,
     })
+end
+
+function Remote:getDiagnostics()
+    local diagnostics = {
+        generated_at = os.time(),
+        version = VERSION,
+        channel = BUILD.channel,
+        source = BUILD.source,
+        release_version = BUILD.release_version,
+        build_id = BUILD.build_id,
+        commit = BUILD.commit,
+        state = runtime.state,
+        last_error = runtime.last_error,
+        last_error_code = runtime.last_error_code,
+        network_ready = runtime.network_ready == true,
+        local_ip = runtime.local_ip,
+        port = runtime.running_port or self:getPort(),
+        autostart = runtime.autostart == true,
+        manual_session = runtime.manual_session == true,
+        request_origin = runtime.request_origin,
+        sleeping = runtime.sleeping == true,
+        retry_index = runtime.retry_index,
+        retry_scheduled = runtime.retry_scheduled == true,
+        sleep_started_at = runtime.sleep_started_at,
+        resume_network_grace_until = runtime.resume_network_grace_until,
+        firewall_active = runtime.firewall_port ~= nil,
+        document_open = self:hasOpenDocument(),
+        session_stats = runtime.session_stats,
+        last_action = runtime.last_action,
+        last_request = runtime.last_request,
+        requests = runtime.request_log,
+        request_stats = runtime.request_stats,
+        events = runtime.session_log,
+        recent_critical_errors = runtime.critical_errors,
+    }
+
+    return diagnostics
 end
 
 function Remote:readIndex()
@@ -1444,6 +1877,11 @@ function Remote:onRequestUnsafe(data, request_id)
     )
 
     if not method or not raw_uri then
+        self:recordDiagnosticError(
+            ERROR_CODE.HTTP_INVALID_REQUEST,
+            "Invalid HTTP request",
+            "http"
+        )
         return self:sendResponse(
             request_id,
             400,
@@ -1454,6 +1892,7 @@ function Remote:onRequestUnsafe(data, request_id)
 
     local uri, params = parseRequestURI(raw_uri)
     local headers = parseHeaders(data)
+    self:beginRequest(request_id, method, uri)
     logger.dbg("KOReaderRemote:", method, uri)
 
     if method ~= "GET" and method ~= "POST" then
@@ -1559,6 +1998,45 @@ function Remote:onRequestUnsafe(data, request_id)
     end
 
     local controls = runtime.device_controls
+
+    if uri == "/api/v1/session-log" then
+        if method ~= "GET" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use GET for the session log."
+            )
+        end
+
+        return self:sendJSON(request_id, 200, {
+            ok = true,
+            events = runtime.session_log,
+            stats = runtime.session_stats,
+            last_action = runtime.last_action,
+            last_error = runtime.last_error,
+            last_error_code = runtime.last_error_code,
+            requests = runtime.request_log,
+            request_stats = runtime.request_stats,
+            recent_critical_errors = runtime.critical_errors,
+        })
+    end
+
+    if uri == "/api/v1/diagnostics" then
+        if method ~= "GET" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use GET for diagnostics."
+            )
+        end
+
+        return self:sendJSON(request_id, 200, {
+            ok = true,
+            diagnostics = self:getDiagnostics(),
+        })
+    end
 
     if uri == "/api/v1/capabilities" then
         if method ~= "GET" then
@@ -2096,7 +2574,7 @@ function Remote:onRequest(data, request_id)
     return self:sendControlError(
         request_id,
         500,
-        "INTERNAL_ERROR",
+        ERROR_CODE.INTERNAL_UNHANDLED_ERROR,
         "The reader could not handle this request."
     )
 end
