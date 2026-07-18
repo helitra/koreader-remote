@@ -1,5 +1,5 @@
 <div align="center">
-<img width="293" height="197" alt="Image" src="https://github.com/user-attachments/assets/31d090b8-8991-4b81-8057-3d1763582208" />
+<img width="148" height="124" alt="Image" src="https://github.com/user-attachments/assets/31d090b8-8991-4b81-8057-3d1763582208" />
 
 **Turn pages and control KOReader from your phone browser.**
 
