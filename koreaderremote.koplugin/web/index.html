@@ -239,6 +239,34 @@
       font-weight: 560;
     }
 
+    .setting-inline-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.42rem;
+    }
+
+    .info-icon {
+      display: inline-flex;
+      width: 1.15rem;
+      height: 1.15rem;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+
+    .setting-help {
+      margin-top: 0.34rem;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.35;
+    }
+
     .setting-heading output {
       color: var(--muted);
       font-variant-numeric: tabular-nums;
@@ -1152,7 +1180,17 @@
           </div>
 
           <div class="simple-row" id="idle-stop-row">
-            <label class="setting-label" for="idle-stop-select">Idle stop</label>
+            <div>
+              <label class="setting-label setting-inline-label" for="idle-stop-select">
+                <span>Idle stop</span>
+                <span class="info-icon"
+                      aria-label="Idle stop info"
+                      title="Turns the server off after a period without any page-turn or control action">i</span>
+              </label>
+              <div class="setting-help">
+                Turns the server off after a period without any page-turn or control action.
+              </div>
+            </div>
             <select class="setting-select" id="idle-stop-select">
               <option value="0">Off</option>
               <option value="10">10 minutes</option>
