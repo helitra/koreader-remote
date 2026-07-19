@@ -145,7 +145,6 @@ jobs:
 
           grep -Fq "local VERSION = \"${VERSION}\"" "${MAIN}"
           grep -Fq 'repository = "helitra/koreader-remote"' "${MAIN}"
-          grep -Fq "## v${VERSION}" CHANGELOG.md
           grep -Fq 'sorting_hint = "tools"' "${MENU}"
           grep -Fq '/api/ping' "${HTTP}"
           grep -Fq '/api/next' "${HTTP}"
@@ -543,6 +542,8 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
+          import subprocess
           import hashlib
           import zipfile
 
@@ -556,6 +557,88 @@ jobs:
               if " = \"" in line:
                   key, value = line.strip().split(" = ", 1)
                   metadata[key] = value.strip().strip(",").strip('"')
+
+          def git_output(*args):
+              return subprocess.check_output(args, text=True).strip()
+
+          try:
+              previous_tag = git_output(
+                  "git",
+                  "describe",
+                  "--tags",
+                  "--abbrev=0",
+                  "--match",
+                  "v[0-9]*",
+                  "HEAD^",
+              )
+              commit_range = f"{previous_tag}..HEAD^"
+          except subprocess.CalledProcessError:
+              commit_range = "HEAD^"
+
+          commits = [
+              line.strip().split("\x00", 1)
+              for line in git_output(
+                  "git",
+                  "log",
+                  "--reverse",
+                  "--no-merges",
+                  "--format=%H%x00%s",
+                  commit_range,
+              ).splitlines()
+              if line.strip()
+          ]
+
+          if not commits:
+              raise SystemExit(
+                  "No commits found for release notes generation."
+              )
+
+          sections = {
+              "Added": [],
+              "Changed": [],
+              "Fixed": [],
+          }
+          added_re = re.compile(
+              r"^(Add|Added|Introduce|Introduced|Implement|Implemented|"
+              r"Create|Created)\b",
+              re.I,
+          )
+          fixed_re = re.compile(
+              r"^(Fix|Fixed|Patch|Patched|Resolve|Resolved|Harden|Hardened)\b",
+              re.I,
+          )
+
+          def is_release_relevant(paths):
+              for path in paths:
+                  if path.startswith("koreaderremote.koplugin/"):
+                      return True
+                  if path in {"VERSION", "CHANGELOG.md"}:
+                      return True
+              return False
+
+          for sha, subject in commits:
+              paths = [
+                  line.strip()
+                  for line in git_output(
+                      "git",
+                      "diff-tree",
+                      "--no-commit-id",
+                      "--name-only",
+                      "-r",
+                      sha,
+                  ).splitlines()
+                  if line.strip()
+              ]
+              if not is_release_relevant(paths):
+                  continue
+              if subject.startswith("Release v"):
+                  continue
+              if added_re.match(subject):
+                  sections["Added"].append(subject)
+              elif fixed_re.match(subject):
+                  sections["Fixed"].append(subject)
+              else:
+                  sections["Changed"].append(subject)
 
           release_version = metadata["release_version"]
           archive = dist / f"koreaderremote-v{release_version}.zip"
@@ -590,15 +673,17 @@ jobs:
               encoding="utf-8",
           )
 
-          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
-          heading = f"## v{version}"
-          start = changelog.find(heading)
-          if start < 0:
-              raise SystemExit(f"Missing {heading} in CHANGELOG.md")
+          notes_lines = [f"## v{version}", ""]
+          for title in ("Added", "Changed", "Fixed"):
+              items = sections[title]
+              if not items:
+                  continue
+              notes_lines.append(f"### {title}")
+              notes_lines.append("")
+              notes_lines.extend(f"- {item}" for item in items)
+              notes_lines.append("")
 
-          next_heading = changelog.find("\n## v", start + len(heading))
-          notes = changelog[start:next_heading if next_heading >= 0 else None]
-          notes = notes.strip() + "\n"
+          notes = "\n".join(notes_lines).rstrip() + "\n"
           notes += (
               "\nBuild channel: " + metadata["channel"] + "\n"
               "Build ID: " + metadata["build_id"] + "\n"
