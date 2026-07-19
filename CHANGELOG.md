@@ -2,6 +2,11 @@
 
 ## v0.9.4
 
+### Changed
+
+- Moved the persistent idle-stop setting from the KOReader plugin menu into
+  the web interface.
+
 ### Fixed
 
 - Hardened platform-aware network recovery and local IP detection.

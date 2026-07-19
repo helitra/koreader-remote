@@ -307,6 +307,7 @@ function Remote:onRequestUnsafe(data, request_id)
             url = runtime.connection_url,
             url_revision = runtime.connection_revision,
             recovery_retry_seconds = RECOVERY_RETRY_SECONDS,
+            idle_timeout_minutes = self:getIdleTimeoutMinutes(),
             note_session_active = runtime.interaction
                 and runtime.interaction:getNoteSessionState().active
                 or false,
@@ -396,6 +397,42 @@ function Remote:onRequestUnsafe(data, request_id)
             build_id = BUILD.build_id,
             commit = BUILD.commit,
             state = controls:getState(),
+            idle_timeout_minutes = self:getIdleTimeoutMinutes(),
+        })
+    end
+
+    if uri == "/api/v1/idle-stop" then
+        if method == "GET" then
+            return self:sendJSON(request_id, 200, {
+                ok = true,
+                minutes = self:getIdleTimeoutMinutes(),
+            })
+        end
+
+        if method ~= "POST" then
+            return self:sendControlError(
+                request_id,
+                405,
+                "METHOD_NOT_ALLOWED",
+                "Use GET or POST for this endpoint."
+            )
+        end
+
+        local minutes = tonumber(params.minutes)
+        if not minutes or minutes < 0 or minutes > 1440
+            or minutes % 1 ~= 0 then
+            return self:sendControlError(
+                request_id,
+                400,
+                "INVALID_IDLE_TIMEOUT",
+                "Idle stop must be a whole number of minutes from 0 to 1440."
+            )
+        end
+
+        self:setIdleTimeoutMinutes(minutes)
+        return self:sendJSON(request_id, 200, {
+            ok = true,
+            minutes = self:getIdleTimeoutMinutes(),
         })
     end
 

@@ -258,6 +258,18 @@
       color: var(--success);
     }
 
+    .setting-select {
+      min-height: 2.55rem;
+      max-width: 11rem;
+      padding: 0 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 0.68rem;
+      background: var(--button);
+      color: inherit;
+      font: inherit;
+      font-weight: 650;
+    }
+
     .setting-section {
       padding-bottom: 0.82rem;
     }
@@ -1139,6 +1151,15 @@
                     aria-pressed="false">Off</button>
           </div>
 
+          <div class="simple-row" id="idle-stop-row">
+            <label class="setting-label" for="idle-stop-select">Idle stop</label>
+            <select class="setting-select" id="idle-stop-select">
+              <option value="0">Off</option>
+              <option value="10">10 minutes</option>
+              <option value="30">30 minutes</option>
+            </select>
+          </div>
+
           <div id="full-refresh-row" hidden>
             <button id="full-refresh" type="button">Full screen refresh</button>
           </div>
@@ -1332,6 +1353,7 @@
     const sessionLogList = document.getElementById("session-log-list");
     const frontlightToggle = document.getElementById("frontlight-toggle");
     const nightModeToggle = document.getElementById("night-mode-toggle");
+    const idleStopSelect = document.getElementById("idle-stop-select");
 
     const controls = {
       brightness: {
@@ -2540,6 +2562,10 @@
       if (typeof deviceState.night_mode === "boolean") {
         setToggle(nightModeToggle, deviceState.night_mode);
       }
+
+      if (typeof deviceState.idle_timeout_minutes === "number") {
+        idleStopSelect.value = String(deviceState.idle_timeout_minutes);
+      }
     }
 
     async function loadCapabilities() {
@@ -2953,6 +2979,25 @@
         "/api/v1/night-mode?enabled=" + String(enabled),
         "Night mode"
       );
+    });
+
+    idleStopSelect.addEventListener("change", async () => {
+      idleStopSelect.disabled = true;
+      try {
+        const payload = await postJSON(
+          "/api/v1/idle-stop?minutes="
+            + encodeURIComponent(idleStopSelect.value)
+        );
+        if (payload && typeof payload.minutes === "number") {
+          idleStopSelect.value = String(payload.minutes);
+        }
+        setStatus("Idle stop saved", true);
+      } catch (error) {
+        setStatus(error.message || "Could not save idle stop", false);
+        await loadDeviceState();
+      } finally {
+        idleStopSelect.disabled = false;
+      }
     });
 
     document.getElementById("full-refresh")

@@ -118,6 +118,7 @@ will not work for every book.
 **Display.** Device settings start collapsed at the top of the phone page.
 The `◐` button enables OLED mode. It reduces persistent bright pixels, but
 cannot guarantee against burn-in; Safari controls its own browser chrome.
+The persistent idle-stop timeout is configured there as well.
 
 **Autostart and standby.** A manually started server survives book and UI
 changes, and is restored after a short sleep (up to five minutes). With

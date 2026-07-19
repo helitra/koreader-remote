@@ -324,7 +324,6 @@ local module_context = {
     index_file = INDEX_FILE,
     http_status = HTTP_STATUS,
     default_port = DEFAULT_PORT,
-    idle_timeout_settings_key = IDLE_TIMEOUT_SETTINGS_KEY,
     update_channel_settings_key = UPDATE_CHANNEL_SETTINGS_KEY,
     retry_delays = RETRY_DELAYS,
     recovery_retry_seconds = RECOVERY_RETRY_SECONDS,
