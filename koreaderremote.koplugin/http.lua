@@ -239,6 +239,7 @@ function Remote:onRequestUnsafe(data, request_id)
     local uri, params = parseRequestURI(raw_uri)
     local headers = parseHeaders(data)
     logger.dbg("KOReaderRemote:", method, uri)
+    self:markActivity()
 
     if method ~= "GET" and method ~= "POST" then
         return self:sendResponse(

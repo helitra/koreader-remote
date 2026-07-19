@@ -8,6 +8,7 @@ local M = {}
 function M.attach(Remote, context)
     local runtime = context.runtime
     local DEFAULT_PORT = context.default_port
+    local IDLE_TIMEOUT_SETTINGS_KEY = context.idle_timeout_settings_key
     local UPDATE_CHANNEL_SETTINGS_KEY = context.update_channel_settings_key
     local STATE_STOPPED = context.state_stopped
     local STATE_WAITING = context.state_waiting
@@ -99,6 +100,16 @@ function Remote:getMenuStatusText()
     end
 
     return _("Server stopped")
+end
+
+function Remote:getIdleTimeoutLabel()
+    local minutes = self:getIdleTimeoutMinutes()
+
+    if minutes <= 0 then
+        return _("Idle stop: Off")
+    end
+
+    return string.format(_("Idle stop: %d min"), minutes)
 end
 
 function Remote:getUpdateChannel()
@@ -238,6 +249,50 @@ function Remote:addToMainMenu(menu_items)
                 end,
                 callback = function()
                     self:setAutostart(not runtime.autostart)
+                end,
+            },
+            {
+                text_func = function()
+                    return self:getIdleTimeoutLabel()
+                end,
+                callback = function()
+                    local ButtonDialog = require("ui/widget/buttondialog")
+                    local dialog
+
+                    dialog = ButtonDialog:new{
+                        title = _("Idle stop after inactivity"),
+                        buttons = {
+                            {
+                                {
+                                    text = _("Off"),
+                                    callback = function()
+                                        self:setIdleTimeoutMinutes(0)
+                                        UIManager:close(dialog)
+                                    end,
+                                },
+                            },
+                            {
+                                {
+                                    text = _("10 minutes"),
+                                    callback = function()
+                                        self:setIdleTimeoutMinutes(10)
+                                        UIManager:close(dialog)
+                                    end,
+                                },
+                            },
+                            {
+                                {
+                                    text = _("30 minutes"),
+                                    callback = function()
+                                        self:setIdleTimeoutMinutes(30)
+                                        UIManager:close(dialog)
+                                    end,
+                                },
+                            },
+                        },
+                    }
+
+                    UIManager:show(dialog)
                 end,
             },
             {

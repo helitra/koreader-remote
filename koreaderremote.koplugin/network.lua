@@ -24,6 +24,7 @@ function M.attach(Remote, context)
     local MANUAL_RECOVERY_MAX_SLEEP_SECONDS =
         context.manual_recovery_max_sleep_seconds
     local LOCAL_IP_CACHE_SECONDS = context.local_ip_cache_seconds
+    local IDLE_TIMEOUT_SETTINGS_KEY = context.idle_timeout_settings_key
     local FIREWALL_INPUT_CHAIN = context.firewall_input_chain
     local FIREWALL_OUTPUT_CHAIN = context.firewall_output_chain
 
@@ -90,6 +91,74 @@ function Remote:cancelRetry(reset_counter)
     if reset_counter ~= false then
         runtime.retry_index = 0
     end
+end
+
+function Remote:cancelIdleStop()
+    if runtime.idle_timer_action then
+        UIManager:unschedule(runtime.idle_timer_action)
+    end
+
+    runtime.idle_timer_scheduled = false
+    runtime.idle_deadline = nil
+end
+
+function Remote:scheduleIdleStop()
+    self:cancelIdleStop()
+
+    if not self:isRunning() then
+        return false
+    end
+
+    local idle_timeout = tonumber(runtime.idle_timeout_seconds) or 0
+    if idle_timeout <= 0 then
+        return false
+    end
+
+    if not runtime.idle_timer_action then
+        runtime.idle_timer_action = function()
+            local owner = runtime.owner
+            if owner then
+                owner:onIdleTimeout()
+            end
+        end
+    end
+
+    runtime.idle_timer_scheduled = true
+    runtime.idle_deadline = os.time() + idle_timeout
+    UIManager:scheduleIn(idle_timeout, runtime.idle_timer_action)
+    return true
+end
+
+function Remote:onIdleTimeout()
+    runtime.idle_timer_scheduled = false
+
+    if not self:isRunning() then
+        return
+    end
+
+    if (tonumber(runtime.idle_timeout_seconds) or 0) <= 0 then
+        return
+    end
+
+    if runtime.idle_deadline and os.time() < runtime.idle_deadline then
+        self:scheduleIdleStop()
+        return
+    end
+
+    logger.info("KOReaderRemote: stopping idle server after inactivity")
+    self:stop(false, false)
+end
+
+function Remote:markActivity()
+    if not self:isRunning() then
+        return
+    end
+
+    if (tonumber(runtime.idle_timeout_seconds) or 0) <= 0 then
+        return
+    end
+
+    self:scheduleIdleStop()
 end
 
 function Remote:scheduleRetry()
@@ -648,6 +717,7 @@ function Remote:startServer(silent, known_ip)
     self:openFirewall(port)
     self:cancelRetry()
     self:refreshConnectionInfo(known_ip)
+    self:scheduleIdleStop()
     self:setState(STATE_RUNNING)
 
     if not silent then
@@ -672,6 +742,7 @@ function Remote:stopServer()
 
     runtime.running_port = nil
     runtime.network_ready = false
+    self:cancelIdleStop()
     self:closeFirewall()
 
     -- Keep the last real URL across standby/reconnect so the cached URL and QR
@@ -753,6 +824,7 @@ function Remote:stop(clear_cached_url, user_initiated)
     runtime.user_stopped = user_initiated
     runtime.sleep_started_at = nil
     runtime.sleeping = false
+    self:cancelIdleStop()
     self:cancelRetry()
     self:stopServer()
 
@@ -956,6 +1028,10 @@ end
 
 function Remote:onResume()
     self:beginResumeRecovery()
+end
+
+function Remote:touchActivity()
+    self:markActivity()
 end
 
 function Remote:onExit()

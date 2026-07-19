@@ -11,6 +11,7 @@ local DEFAULT_PORT = 8081
 local LEGACY_SETTINGS_KEY = "koreaderremote"
 local PORT_SETTINGS_KEY = "koreaderremote_port"
 local AUTOSTART_SETTINGS_KEY = "koreaderremote_autostart"
+local IDLE_TIMEOUT_SETTINGS_KEY = "koreaderremote_idle_timeout_minutes"
 local UPDATE_CHANNEL_SETTINGS_KEY = "koreaderremote_update_channel"
 local PLUGIN_DIR = DataStorage:getDataDir() .. "/plugins/koreaderremote.koplugin"
 local INDEX_FILE = PLUGIN_DIR .. "/web/index.html"
@@ -89,6 +90,11 @@ if type(runtime) ~= "table" then
         request_origin = nil,
         manual_session = false,
         user_stopped = false,
+        idle_timeout_minutes = 0,
+        idle_timeout_seconds = 0,
+        idle_timer_scheduled = false,
+        idle_timer_action = nil,
+        idle_deadline = nil,
         retry_index = 0,
         retry_scheduled = false,
         retry_action = nil,
@@ -109,6 +115,12 @@ function Remote:init()
     self.port = tonumber(G_reader_settings:readSetting(PORT_SETTINGS_KEY))
         or DEFAULT_PORT
     runtime.autostart = G_reader_settings:isTrue(AUTOSTART_SETTINGS_KEY)
+    runtime.idle_timeout_minutes =
+        tonumber(G_reader_settings:readSetting(IDLE_TIMEOUT_SETTINGS_KEY)) or 0
+    runtime.idle_timeout_seconds = math.max(
+        0,
+        math.floor(runtime.idle_timeout_minutes * 60)
+    )
     runtime.owner = self
     runtime.document_open = self.ui ~= nil and self.ui.document ~= nil
 
@@ -195,6 +207,13 @@ function Remote:init()
         end
     end
 
+    if runtime.idle_timeout_minutes > 0 then
+        G_reader_settings:saveSetting(
+            IDLE_TIMEOUT_SETTINGS_KEY,
+            runtime.idle_timeout_minutes
+        )
+    end
+
     self.ui.menu:registerToMainMenu(self)
     logger.info("KOReaderRemote: plugin initialized, version", VERSION)
 
@@ -270,6 +289,28 @@ function Remote:setAutostart(enabled)
     end
 end
 
+function Remote:getIdleTimeoutMinutes()
+    return tonumber(runtime.idle_timeout_minutes) or 0
+end
+
+function Remote:setIdleTimeoutMinutes(minutes)
+    minutes = math.max(0, math.floor(tonumber(minutes) or 0))
+    runtime.idle_timeout_minutes = minutes
+    runtime.idle_timeout_seconds = minutes * 60
+
+    if minutes > 0 then
+        G_reader_settings:saveSetting(IDLE_TIMEOUT_SETTINGS_KEY, minutes)
+    else
+        G_reader_settings:delSetting(IDLE_TIMEOUT_SETTINGS_KEY)
+    end
+
+    if self:isRunning() then
+        self:scheduleIdleStop()
+    else
+        self:cancelIdleStop()
+    end
+end
+
 
 local Network = dofile(PLUGIN_DIR .. "/network.lua")
 local HTTP = dofile(PLUGIN_DIR .. "/http.lua")
@@ -283,6 +324,7 @@ local module_context = {
     index_file = INDEX_FILE,
     http_status = HTTP_STATUS,
     default_port = DEFAULT_PORT,
+    idle_timeout_settings_key = IDLE_TIMEOUT_SETTINGS_KEY,
     update_channel_settings_key = UPDATE_CHANNEL_SETTINGS_KEY,
     retry_delays = RETRY_DELAYS,
     recovery_retry_seconds = RECOVERY_RETRY_SECONDS,
@@ -302,4 +344,3 @@ Network.attach(Remote, module_context)
 HTTP.attach(Remote, module_context)
 Menu.attach(Remote, module_context)
 return Remote
-
