@@ -157,6 +157,9 @@ GitHub Releases or a second artifact branch. The updater downloads the GitHub
 commit ZIP, verifies its plugin layout and build identity, and installs it as
 a Dev build. Switch back to Stable when you want the regular release stream.
 
+Release notes are generated from the commit subjects between the previous tag
+and the release commit, so keep `dev` commit messages short and descriptive.
+
 ## 🔐 Security
 
 KOReader Remote is for trusted local networks. It has no authentication or
