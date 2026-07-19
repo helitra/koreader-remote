@@ -52,8 +52,11 @@ local REQUIRED_FILES = {
     "_meta.lua",
     "build.lua",
     "devicecontrols.lua",
+    "http.lua",
     "interaction.lua",
+    "menu.lua",
     "main.lua",
+    "network.lua",
     "updater.lua",
     "web/index.html",
 }
