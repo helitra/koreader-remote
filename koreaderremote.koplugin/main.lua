@@ -293,8 +293,21 @@ function Remote:getIdleTimeoutMinutes()
     return tonumber(runtime.idle_timeout_minutes) or 0
 end
 
+function Remote:getIdleTimeoutRemainingSeconds()
+    if not self:isRunning() then
+        return 0
+    end
+
+    local deadline = tonumber(runtime.idle_deadline)
+    if not deadline then
+        return 0
+    end
+
+    return math.max(0, math.floor(deadline - os.time()))
+end
+
 function Remote:setIdleTimeoutMinutes(minutes)
-    minutes = math.max(0, math.floor(tonumber(minutes) or 0))
+    minutes = math.max(0, tonumber(minutes) or 0)
     runtime.idle_timeout_minutes = minutes
     runtime.idle_timeout_seconds = minutes * 60
 

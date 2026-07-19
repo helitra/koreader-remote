@@ -245,6 +245,13 @@
       gap: 0.42rem;
     }
 
+    .idle-stop-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.28rem;
+    }
+
     .info-icon {
       display: inline-flex;
       width: 1.15rem;
@@ -261,6 +268,14 @@
       font-weight: 800;
       line-height: 1;
       flex: 0 0 auto;
+    }
+
+    .idle-stop-timer {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+      text-align: right;
     }
 
     .setting-heading output {
@@ -1119,11 +1134,17 @@
                       aria-label="Idle stop info"
                       title="Idle stop info">i</button>
             </div>
-            <select class="setting-select" id="idle-stop-select">
-              <option value="0">Off</option>
-              <option value="10">10 minutes</option>
-              <option value="30">30 minutes</option>
-            </select>
+            <div class="idle-stop-controls">
+              <select class="setting-select" id="idle-stop-select">
+                <option value="0">Off</option>
+                <option value="0.5">30 seconds</option>
+                <option value="10">10 minutes</option>
+                <option value="30">30 minutes</option>
+              </select>
+              <div class="idle-stop-timer" id="idle-stop-timer" aria-live="polite">
+                Idle stop off
+              </div>
+            </div>
           </div>
 
           <div id="full-refresh-row" hidden>
@@ -1300,6 +1321,7 @@
     const nightModeRow = document.getElementById("night-mode-row");
     const fullRefreshRow = document.getElementById("full-refresh-row");
     const idleStopInfo = document.getElementById("idle-stop-info");
+    const idleStopTimer = document.getElementById("idle-stop-timer");
     const frontlightToggle = document.getElementById("frontlight-toggle");
     const nightModeToggle = document.getElementById("night-mode-toggle");
     const idleStopSelect = document.getElementById("idle-stop-select");
@@ -1358,6 +1380,8 @@
     let bookmarkQuery = "";
     let bookmarkSortMode = "book";
     let bookmarkRequestRunning = false;
+    let idleStopDeadline = null;
+    let idleStopTicker = null;
 
     function clamp(value, minimum, maximum) {
       return Math.max(minimum, Math.min(maximum, value));
@@ -2515,6 +2539,12 @@
       if (typeof deviceState.idle_timeout_minutes === "number") {
         idleStopSelect.value = String(deviceState.idle_timeout_minutes);
       }
+
+      if (typeof deviceState.idle_timeout_seconds_remaining === "number") {
+        setIdleStopTimer(deviceState.idle_timeout_seconds_remaining);
+      } else {
+        setIdleStopTimer();
+      }
     }
 
     async function loadCapabilities() {
@@ -2527,10 +2557,100 @@
       applyDeviceState(payload.state);
     }
 
+    function getIdleStopTimeoutSeconds() {
+      const timeoutMinutes = Number(idleStopSelect.value);
+      if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) {
+        return 0;
+      }
+
+      return Math.round(timeoutMinutes * 60);
+    }
+
+    function stopIdleStopTicker() {
+      if (idleStopTicker !== null) {
+        window.clearInterval(idleStopTicker);
+        idleStopTicker = null;
+      }
+    }
+
+    function formatIdleStopRemaining(seconds) {
+      const totalSeconds = Math.max(0, Math.ceil(seconds));
+
+      if (totalSeconds === 0) {
+        return "Idle stop now";
+      }
+
+      if (totalSeconds < 60) {
+        return "Idle stop in " + totalSeconds + "s";
+      }
+
+      const minutes = Math.floor(totalSeconds / 60);
+      const remainingSeconds = totalSeconds % 60;
+
+      if (remainingSeconds === 0) {
+        return "Idle stop in " + minutes + "m";
+      }
+
+      return "Idle stop in " + minutes + "m "
+        + String(remainingSeconds).padStart(2, "0")
+        + "s";
+    }
+
+    function renderIdleStopTimer() {
+      const timeoutSeconds = getIdleStopTimeoutSeconds();
+
+      if (timeoutSeconds <= 0) {
+        idleStopDeadline = null;
+        stopIdleStopTicker();
+        idleStopTimer.textContent = "Idle stop off";
+        return;
+      }
+
+      if (!idleStopDeadline) {
+        idleStopTimer.textContent = "Idle stop armed";
+        return;
+      }
+
+      const remainingSeconds = Math.max(
+        0,
+        Math.ceil((idleStopDeadline - Date.now()) / 1000)
+      );
+
+      idleStopTimer.textContent = formatIdleStopRemaining(remainingSeconds);
+
+      if (remainingSeconds <= 0) {
+        stopIdleStopTicker();
+      }
+    }
+
+    function setIdleStopTimer(remainingSeconds) {
+      const timeoutSeconds = getIdleStopTimeoutSeconds();
+
+      if (timeoutSeconds <= 0) {
+        idleStopDeadline = null;
+        idleStopTimer.textContent = "Idle stop off";
+        stopIdleStopTicker();
+        return;
+      }
+
+      if (typeof remainingSeconds === "number" && isFinite(remainingSeconds)) {
+        idleStopDeadline = Date.now() + Math.max(0, remainingSeconds) * 1000;
+      } else {
+        idleStopDeadline = Date.now() + timeoutSeconds * 1000;
+      }
+
+      if (idleStopTicker === null) {
+        idleStopTicker = window.setInterval(renderIdleStopTimer, 1000);
+      }
+
+      renderIdleStopTimer();
+    }
+
     function showIdleStopInfo() {
       window.alert(
-        "Stops the server after no page turns or control actions.\n"
-        + "Auto-start does not override it; it restarts only after standby/resume."
+        "Persistent setting; survives server restarts.\n"
+        + "Stops the server after no page turns or control actions.\n"
+        + "Auto-start does not override it; it returns only after standby/resume."
       );
     }
 
@@ -2609,6 +2729,7 @@
           const problem = await response.json();
 
           if (problem.error === "NO_DOCUMENT_OPEN") {
+            setIdleStopTimer();
             setStatus("Open a book on your reader", true);
             scheduleConnectionCheck(3000);
             return;
@@ -2617,6 +2738,7 @@
 
         await readJSON(response);
         failedPings = 0;
+        setIdleStopTimer();
         setStatus("Connected", true);
         scheduleConnectionCheck(15000);
 
@@ -2642,6 +2764,7 @@
           applyDeviceState(payload.state);
         }
 
+        setIdleStopTimer();
         setStatus("Connected", true);
         scheduleConnectionCheck(15000);
       } catch (error) {
@@ -2650,9 +2773,13 @@
 
         if (code === "NOT_SUPPORTED") {
           capabilities = null;
+          setIdleStopTimer();
           setStatus("Feature not supported", false);
           window.setTimeout(checkConnection, 700);
         } else {
+          if (typeof error.status === "number") {
+            setIdleStopTimer();
+          }
           setStatus(error.message || "Control failed", false);
           scheduleConnectionCheck(2500);
         }
@@ -2872,8 +2999,16 @@
         if (payload && typeof payload.minutes === "number") {
           idleStopSelect.value = String(payload.minutes);
         }
+        if (payload && typeof payload.idle_timeout_seconds_remaining === "number") {
+          setIdleStopTimer(payload.idle_timeout_seconds_remaining);
+        } else {
+          setIdleStopTimer();
+        }
         setStatus("Idle stop saved", true);
       } catch (error) {
+        if (typeof error.status === "number") {
+          setIdleStopTimer();
+        }
         setStatus(error.message || "Could not save idle stop", false);
         await loadDeviceState();
       } finally {

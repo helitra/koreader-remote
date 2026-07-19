@@ -222,6 +222,13 @@ function Remote:turnPage(delta)
     return true
 end
 
+function Remote:augmentDeviceState(state)
+    state = state or {}
+    state.idle_timeout_minutes = self:getIdleTimeoutMinutes()
+    state.idle_timeout_seconds_remaining = self:getIdleTimeoutRemainingSeconds()
+    return state
+end
+
 function Remote:onRequestUnsafe(data, request_id)
     local method, raw_uri = data:match(
         "^(%u+)%s+([^%s]+)%s+HTTP/%d%.%d"
@@ -239,7 +246,17 @@ function Remote:onRequestUnsafe(data, request_id)
     local uri, params = parseRequestURI(raw_uri)
     local headers = parseHeaders(data)
     logger.dbg("KOReaderRemote:", method, uri)
-    self:markActivity()
+
+    if uri ~= "/"
+        and uri ~= "/index.html"
+        and uri ~= "/api/ping"
+        and uri ~= "/api/v1/capabilities"
+        and uri ~= "/api/v1/device-state"
+        and uri ~= "/api/v1/note-session"
+        and uri ~= "/api/v1/bookmarks"
+        and uri ~= "/favicon.ico" then
+        self:markActivity()
+    end
 
     if method ~= "GET" and method ~= "POST" then
         return self:sendResponse(
@@ -308,6 +325,8 @@ function Remote:onRequestUnsafe(data, request_id)
             url_revision = runtime.connection_revision,
             recovery_retry_seconds = RECOVERY_RETRY_SECONDS,
             idle_timeout_minutes = self:getIdleTimeoutMinutes(),
+            idle_timeout_seconds_remaining =
+                self:getIdleTimeoutRemainingSeconds(),
             note_session_active = runtime.interaction
                 and runtime.interaction:getNoteSessionState().active
                 or false,
@@ -396,8 +415,7 @@ function Remote:onRequestUnsafe(data, request_id)
             release_version = BUILD.release_version,
             build_id = BUILD.build_id,
             commit = BUILD.commit,
-            state = controls:getState(),
-            idle_timeout_minutes = self:getIdleTimeoutMinutes(),
+            state = self:augmentDeviceState(controls:getState()),
         })
     end
 
@@ -406,6 +424,8 @@ function Remote:onRequestUnsafe(data, request_id)
             return self:sendJSON(request_id, 200, {
                 ok = true,
                 minutes = self:getIdleTimeoutMinutes(),
+                idle_timeout_seconds_remaining =
+                    self:getIdleTimeoutRemainingSeconds(),
             })
         end
 
@@ -420,12 +440,12 @@ function Remote:onRequestUnsafe(data, request_id)
 
         local minutes = tonumber(params.minutes)
         if not minutes or minutes < 0 or minutes > 1440
-            or minutes % 1 ~= 0 then
+            or minutes * 2 % 1 ~= 0 then
             return self:sendControlError(
                 request_id,
                 400,
                 "INVALID_IDLE_TIMEOUT",
-                "Idle stop must be a whole number of minutes from 0 to 1440."
+                "Idle stop must be a number from 0 to 1440 minutes in 30-second steps."
             )
         end
 
@@ -433,6 +453,8 @@ function Remote:onRequestUnsafe(data, request_id)
         return self:sendJSON(request_id, 200, {
             ok = true,
             minutes = self:getIdleTimeoutMinutes(),
+            idle_timeout_seconds_remaining =
+                self:getIdleTimeoutRemainingSeconds(),
         })
     end
 
