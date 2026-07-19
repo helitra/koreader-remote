@@ -1127,6 +1127,10 @@
                     aria-pressed="false">Off</button>
           </div>
 
+          <div id="full-refresh-row" hidden>
+            <button id="full-refresh" type="button">Full screen refresh</button>
+          </div>
+
           <div class="simple-row" id="idle-stop-row">
             <div class="setting-inline-group">
               <label class="setting-label" for="idle-stop-select">Idle stop</label>
@@ -1137,7 +1141,9 @@
             <div class="idle-stop-controls">
               <select class="setting-select" id="idle-stop-select">
                 <option value="0">Off</option>
-                <option value="0.5">30 seconds</option>
+                <option value="0.5" hidden>30 seconds</option>
+                <option value="2">2 minutes</option>
+                <option value="5">5 minutes</option>
                 <option value="10">10 minutes</option>
                 <option value="30">30 minutes</option>
               </select>
@@ -1145,10 +1151,6 @@
                 Idle stop off
               </div>
             </div>
-          </div>
-
-          <div id="full-refresh-row" hidden>
-            <button id="full-refresh" type="button">Full screen refresh</button>
           </div>
         </div>
       </div>
@@ -2648,7 +2650,7 @@
 
     function showIdleStopInfo() {
       window.alert(
-        "Persistent setting; survives server restarts.\n"
+        "Persistent setting. Improves battery life.\n"
         + "Stops the server after no page turns or control actions.\n"
         + "Auto-start does not override it; it returns only after standby/resume."
       );

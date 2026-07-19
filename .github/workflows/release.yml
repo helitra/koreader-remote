@@ -170,8 +170,28 @@ jobs:
           grep -Fq '<html lang="en">' "${INDEX}"
           grep -Fq '<details id="device-controls" hidden>' "${INDEX}"
           grep -Fq '<summary>Device settings</summary>' "${INDEX}"
+          grep -Fq '<div id="full-refresh-row" hidden>' "${INDEX}"
           grep -Fq 'id="idle-stop-select"' "${INDEX}"
           grep -Fq '/api/v1/idle-stop?minutes=' "${INDEX}"
+          grep -Fq '<option value="2">2 minutes</option>' "${INDEX}"
+          grep -Fq '<option value="5">5 minutes</option>' "${INDEX}"
+          grep -Fq '<option value="10">10 minutes</option>' "${INDEX}"
+          grep -Fq '<option value="30">30 minutes</option>' "${INDEX}"
+          grep -Fq 'Improves battery life.' "${INDEX}"
+          python3 - "${INDEX}" <<'PY'
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              index = handle.read()
+
+          full_refresh = index.find('<div id="full-refresh-row" hidden>')
+          idle_stop = index.find('<div class="simple-row" id="idle-stop-row">')
+
+          if full_refresh == -1 or idle_stop == -1:
+              raise SystemExit("Idle stop ordering markers are missing.")
+          if full_refresh > idle_stop:
+              raise SystemExit("Full screen refresh must stay above Idle stop.")
+          PY
           grep -Fq 'aria-label="Previous page"' "${INDEX}"
           grep -Fq 'aria-label="Next page"' "${INDEX}"
           grep -Fq 'data-control="brightness" data-value="1"' "${INDEX}"
